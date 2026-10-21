@@ -37,9 +37,16 @@ const setUp = (on: On, now = NOW) => {
   compactions.length = 0
   toasts.length = 0
   compact = DEFAULT_COMPACTION
+  holdCompaction = false
 
-  on('session.compact', () => {
+  on('session.compact', async () => {
     compactions.push('called')
+
+    if (holdCompaction) {
+      await new Promise<void>(resolve => {
+        releaseCompaction = resolve
+      })
+    }
 
     return compact()
   })
@@ -63,14 +70,8 @@ type Finder = {
   find: (query: { type: string; text: RegExp }) => Promise<{ text: string } | undefined>
 }
 
-// The context is a Button while it can be pressed and a Text while it cannot.
-const contextOf = async (ui: Finder) => {
-  const found =
-    (await ui.find({ type: 'Button', text: /Контекст/ })) ??
-    (await ui.find({ type: 'Text', text: /Контекст/ }))
-
-  return found?.text
-}
+const contextOf = async (ui: Finder) =>
+  (await ui.find({ type: 'Text', text: /Контекст/ }))?.text
 
 const DARK_RED = '#b91c1c'
 
@@ -85,6 +86,8 @@ const DEFAULT_COMPACTION = (): SessionCompactResult => ({
 })
 
 let compact: () => SessionCompactResult = DEFAULT_COMPACTION
+let holdCompaction = false
+let releaseCompaction: () => void = () => {}
 
 const isoAfter = (ms: number) => new Date(NOW + ms).toISOString()
 
@@ -112,11 +115,7 @@ test('draws context, session and week in one row, on every surface', async ($, o
     )
     expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
     expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
-    // No label of its own: the engine names the button by its children, which
-    // are what the desktop draws.
-    expect((await ui.find({ type: 'Button', text: /Контекст/ }))?.props.label).toBe(
-      'Контекст ███░░░░░░░ 34% 68k/200k',
-    )
+    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('Стиснути')
 
     await ui.unmount()
   }
@@ -283,20 +282,24 @@ test('a compaction that fails leaves the context and the button as they were', a
   await ui.unmount()
 })
 
-test('while a turn runs the context is text, not a button', async ($, on) => {
-  setUp(on)
+test('while a compaction runs the button gives way to a dim note', async ($, on) => {
+  const clock = setUp(on)
+  holdCompaction = true
   await measureContext($)
 
-  const ui = await $.ui.mount({
-    ...BAND,
-    surface: 'desktop',
-    props: { ...BAND.props, isWorking: true },
-  })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const pressed = ui.press({ key: 'compact' })
+
+  await clock.advance(0)
 
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
-  expect(await contextOf(ui)).toBe(
-    'Контекст ███░░░░░░░ 34% 68k/200k',
-  )
+  expect(await ui.find({ type: 'Text', text: /стискаю/ })).toBeDefined()
+
+  releaseCompaction()
+  await pressed
+
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /стискаю/ })).toBeUndefined()
   await ui.unmount()
 })
 
