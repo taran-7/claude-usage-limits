@@ -59,6 +59,19 @@ const setUp = (on: On, now = NOW) => {
   return clock
 }
 
+type Finder = {
+  find: (query: { type: string; text: RegExp }) => Promise<{ text: string } | undefined>
+}
+
+// The context is a Button while it can be pressed and a Text while it cannot.
+const contextOf = async (ui: Finder) => {
+  const found =
+    (await ui.find({ type: 'Button', text: /Контекст/ })) ??
+    (await ui.find({ type: 'Text', text: /Контекст/ }))
+
+  return found?.text
+}
+
 const compactions: string[] = []
 const toasts: string[] = []
 const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
@@ -89,7 +102,7 @@ test('draws context, session and week in one row, on every surface', async ($, o
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
 
-    expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+    expect(await contextOf(ui)).toBe(
       'Контекст ███░░░░░░░ 34% 68k/200k',
     )
     expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe(
@@ -97,6 +110,11 @@ test('draws context, session and week in one row, on every surface', async ($, o
     )
     expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
     expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+    // No label of its own: the engine names the button by its children, which
+    // are what the desktop draws.
+    expect((await ui.find({ type: 'Button', text: /Контекст/ }))?.props.label).toBe(
+      'Контекст ███░░░░░░░ 34% 68k/200k',
+    )
 
     await ui.unmount()
   }
@@ -179,7 +197,7 @@ test('derives the context percent from tokens when the engine reports none', asy
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ███░░░░░░░ 25% 250k/1M')
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░░░ 25% 250k/1M')
   await ui.unmount()
 })
 
@@ -190,7 +208,7 @@ test('shows the context alone when no subscription limits are reported', async (
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(await ui.find({ type: 'Text', text: /Контекст/ })).toBeDefined()
+  expect(await contextOf(ui)).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Сесія/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Тиждень/ })).toBeUndefined()
   await ui.unmount()
@@ -202,10 +220,10 @@ test('the context follows each measurement', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 40_000, percent: 20 }))
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ██░░░░░░░░ 20% 40k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░░░ 20% 40k/200k')
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 190_000, percent: 95 }))
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ██████████ 95% 190k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ██████████ 95% 190k/200k')
 
   await ui.unmount()
 })
@@ -221,7 +239,7 @@ test('pressing the context compacts the conversation and shows the size after it
   await ui.press({ key: 'compact' })
 
   expect(compactions).toEqual(['called'])
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+  expect(await contextOf(ui)).toBe(
     'Контекст █░░░░░░░░░ 6% 12k/200k',
   )
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
@@ -238,7 +256,7 @@ test('a vetoed compaction leaves the context as it was', async ($, on) => {
   await ui.press({ key: 'compact' })
 
   expect(compactions).toEqual(['called'])
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+  expect(await contextOf(ui)).toBe(
     'Контекст ███░░░░░░░ 34% 68k/200k',
   )
   expect(toasts).toEqual(['Стискаю контекст…', 'Compact скасовано: off'])
@@ -255,7 +273,7 @@ test('a compaction that fails leaves the context and the button as they were', a
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await ui.press({ key: 'compact' })
 
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+  expect(await contextOf(ui)).toBe(
     'Контекст ███░░░░░░░ 34% 68k/200k',
   )
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
@@ -274,7 +292,7 @@ test('while a turn runs the context is text, not a button', async ($, on) => {
   })
 
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+  expect(await contextOf(ui)).toBe(
     'Контекст ███░░░░░░░ 34% 68k/200k',
   )
   await ui.unmount()

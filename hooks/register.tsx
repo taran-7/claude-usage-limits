@@ -203,17 +203,21 @@ export const register: Register = on => {
     const contextSegment = segments.find(segment => segment.key === 'context')
     const limitSegments = segments.filter(segment => segment.key !== 'context')
 
-    const drawSegment = ({ key, label, percent, detail }: Segment) => (
-      <Text key={key}>
-        {`${label} `}
-        <Text key={`${key}-bar`} color={pickColor(percent)} mono>
-          {`${drawBar(percent)} `}
-        </Text>
-        <Text key={`${key}-percent`} color={pickColor(percent)} mono>
-          {`${Math.round(percent)}%`}
-        </Text>
-        {detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>}
-      </Text>
+    // The label, the bar, the percent and the detail: strings and one level
+    // of Text, which a Text and a Button both draw on every surface.
+    const segmentParts = ({ label, percent, detail }: Segment) => [
+      `${label} `,
+      <Text color={pickColor(percent)} mono>
+        {`${drawBar(percent)} `}
+      </Text>,
+      <Text color={pickColor(percent)} mono>
+        {`${Math.round(percent)}%`}
+      </Text>,
+      detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>,
+    ]
+
+    const drawSegment = (segment: Segment) => (
+      <Text key={segment.key}>{segmentParts(segment)}</Text>
     )
 
     const separator = (index: number) => (
@@ -224,6 +228,9 @@ export const register: Register = on => {
 
     // A press compacts only between turns, so while a turn runs, or a
     // compaction is already under way, the context is plain text.
+    //
+    // No `label` on the Button: the desktop draws a label in place of the
+    // children, and the children are the context the person reads.
     const drawContext = (segment: Segment) => {
       if (e.props.isWorking) return drawSegment(segment)
       if (isBusy) return drawSegment({ ...segment, detail: 'стискаю…' })
@@ -231,12 +238,11 @@ export const register: Register = on => {
       return (
         <Button
           key="compact"
-          label="Стиснути контекст (compact)"
           onPress={() => {
             void compactNow($)
           }}
         >
-          {drawSegment(segment)}
+          {segmentParts(segment)}
         </Button>
       )
     }
