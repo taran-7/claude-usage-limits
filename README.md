@@ -1,51 +1,53 @@
 # usage-limits
 
-Мод для Claude Code, який показує над полем введення один рядок: заповнення контекстного вікна поточної сесії, п'ятигодинний ліміт підписки й тижневий ліміт, разом із часом до скидання.
+A Claude Code mod that draws one row above the prompt: how full the context window of the current session is, the five-hour subscription limit and the weekly limit, each with a bar and the time left until it resets.
 
 ```
 Контекст ███░░░░░░░ 34% 68k/200k  ·  Сесія ██░░░░░░░░ 23% 2 год 20 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год
 ```
 
-*English: a Claude Code mod that draws a single row above the prompt with the context window fill, the five-hour usage limit and the weekly usage limit, each with a bar and the time left until it resets. The labels are in Ukrainian; change them in `hooks/register.tsx`.*
+The labels are in Ukrainian: `Контекст` is Context, `Сесія` is Session, `Тиждень` is Week, and `дн`, `год`, `хв` are days, hours, minutes. They live in `hooks/register.tsx` and are easy to change.
 
-## Що показує
+## What it shows
 
-- **Контекст**: відсоток заповнення контекстного вікна і `токени/вікно`.
-- **Сесія**: відсоток п'ятигодинного ліміту підписки і скільки лишилося до його скидання.
-- **Тиждень**: відсоток тижневого ліміту і скільки лишилося до скидання.
-- Смужка й відсоток зелені до 70%, жовті від 70% і червоні від 90%.
-- Відлік оновлюється сам раз на 30 секунд, а дані приходять після кожної відповіді моделі.
-- Ліміти підписки є лише в акаунтів із підпискою, і лише після першої відповіді в сесії. Без них показується тільки контекст.
-- Якщо вікно ліміту вже скинулось, замість часу напишеться "щойно скинуто".
-- У вузькому вікні рядок обрізається з кінця, а не переноситься.
+- **Context**: how full the context window is, as a percentage, and `tokens/window`.
+- **Session**: how much of the five-hour subscription limit is used, and how long until it resets.
+- **Week**: how much of the weekly limit is used, and how long until it resets.
+- Each bar and percentage is green below 70%, yellow from 70% and red from 90%.
+- The countdown refreshes on its own every 30 seconds. The numbers themselves arrive after each model response.
+- Subscription limits exist only for accounts with a subscription, and only after the first response in a session. Without them, only the context is shown.
+- When a limit window has already reset, the time is replaced by `щойно скинуто` ("just reset").
+- On a narrow window the row is cut off at the end instead of wrapping.
 
-## Встановлення
+## Install
 
-У десктопному застосунку (там `/plugin` не працює): натисніть `+` біля поля введення, далі Plugins, Add marketplace з `taran-7/claude-usage-limits`, потім Add plugin і `usage-limits`.
+In the desktop app, where `/plugin` does not run: click `+` next to the prompt box, then Plugins, Add marketplace with `taran-7/claude-usage-limits`, then Add plugin and pick `usage-limits`.
 
-У терміналі, у сесії Claude Code:
+In a terminal session of Claude Code:
 
 ```
 /plugin install usage-limits --marketplace taran-7/claude-usage-limits
 ```
 
-З оболонки:
+From a shell:
 
 ```
 claude plugin install usage-limits --marketplace taran-7/claude-usage-limits
 ```
 
-Claude Code спитає `Add marketplace?`, відповідайте `y`, потім оберіть область (user scope стоїть першою). Після цього мод працює в усіх нових сесіях.
+Claude Code asks `Add marketplace?`. Answer `y`, then pick a scope (user scope is listed first). After that the mod runs in every new session.
 
-Перевірено на Claude Code 2.1.299.
+Tested on Claude Code 2.1.299.
 
-## Розробка
+## Development
 
 ```
 claude plugin validate .
 claude plugin test .
 ```
 
-`claude` у вашому PATH може бути старішим за вбудований у десктопний застосунок. Якщо `plugin test` невідома команда або валідатор не знає подію `session.measure`, запустіть бінарник із застосунку: `~/Library/Application Support/Claude/claude-code/<версія>/<хеш>/claude.app/Contents/MacOS/claude`.
+The `claude` on your PATH can be older than the one bundled with the desktop app. If `plugin test` is an unknown command, or the validator does not know the `session.measure` event, run the bundled binary instead: `~/Library/Application Support/Claude/claude-code/<version>/<hash>/claude.app/Contents/MacOS/claude`.
 
-Підписи (`Контекст`, `Сесія`, `Тиждень`, `дн`, `год`, `хв`) лежать у `hooks/register.tsx`.
+The labels (`Контекст`, `Сесія`, `Тиждень`, `дн`, `год`, `хв`) are in `hooks/register.tsx`.
+
+Changes to `main` go through pull requests only.
