@@ -220,21 +220,17 @@ export const register: Register = on => {
     const contextSegment = segments.find(segment => segment.key === 'context')
     const limitSegments = segments.filter(segment => segment.key !== 'context')
 
-    // The label, the bar, the percent and the detail: strings and one level
-    // of Text, which a Text and a Button both draw on every surface.
-    const segmentParts = ({ label, percent, color, detail }: Segment) => [
-      `${label} `,
-      <Text color={color} mono>
-        {`${drawBar(percent)} `}
-      </Text>,
-      <Text color={color} mono>
-        {`${Math.round(percent)}%`}
-      </Text>,
-      detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>,
-    ]
-
-    const drawSegment = (segment: Segment) => (
-      <Text key={segment.key}>{segmentParts(segment)}</Text>
+    const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
+      <Text key={key}>
+        {`${label} `}
+        <Text color={color} mono>
+          {`${drawBar(percent)} `}
+        </Text>
+        <Text color={color} mono>
+          {`${Math.round(percent)}%`}
+        </Text>
+        {detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>}
+      </Text>
     )
 
     const separator = (index: number) => (
@@ -243,30 +239,27 @@ export const register: Register = on => {
       </Text>
     )
 
-    // A press compacts only between turns, so while a turn runs, or a
-    // compaction is already under way, the context is plain text.
-    //
-    // No `label` on the Button: the desktop draws a label in place of the
-    // children, and the children are the context the person reads.
-    const drawContext = (segment: Segment) => {
-      if (e.props.isWorking) return drawSegment(segment)
-      if (isBusy) return drawSegment({ ...segment, detail: 'стискаю…' })
-
-      return (
+    // The context stays plain text next to the button: the desktop draws a
+    // Button's children without their colours, and the bar is the colour.
+    // Pressed during a turn it only toasts, as the compaction is refused.
+    const drawCompact = () =>
+      isBusy ? (
+        <Text dimColor>стискаю…</Text>
+      ) : (
         <Button
           key="compact"
+          label="Стиснути"
+          dimColor
           onPress={() => {
             void compactNow($)
           }}
-        >
-          {segmentParts(segment)}
-        </Button>
+        />
       )
-    }
 
     return (
       <Box flexDirection="row" alignItems="center" columnGap="sm">
-        {contextSegment === undefined ? null : drawContext(contextSegment)}
+        {contextSegment === undefined ? null : drawSegment(contextSegment)}
+        {contextSegment === undefined ? null : drawCompact()}
         {contextSegment === undefined || limitSegments.length === 0 ? null : (
           <Text dimColor>·</Text>
         )}
