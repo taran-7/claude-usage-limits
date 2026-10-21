@@ -16,12 +16,18 @@ const DAY_MS = 24 * HOUR_MS
 const WARNING_AT = 70
 const ERROR_AT = 90
 const BAR_WIDTH = 10
+// The context is judged on the percent as it is shown: green up to 40, yellow
+// 41 to 60, dark red from 61. The limits keep WARNING_AT and ERROR_AT.
+const CONTEXT_GREEN_UNTIL = 40
+const CONTEXT_YELLOW_UNTIL = 60
+const DARK_RED = '#b91c1c'
 const SEPARATOR = '  ·  '
 
 type Segment = {
   key: string
   label: string
   percent: number
+  color: string
   detail: string
 }
 
@@ -97,6 +103,14 @@ const pickColor = (percent: number): 'success' | 'warning' | 'error' => {
   return 'success'
 }
 
+const pickContextColor = (percent: number): string => {
+  const shown = Math.round(percent)
+
+  if (shown <= CONTEXT_GREEN_UNTIL) return 'success'
+  if (shown <= CONTEXT_YELLOW_UNTIL) return 'warning'
+  return DARK_RED
+}
+
 const toSegments = (
   fill: ContextFill | null,
   { session, week }: Limits,
@@ -109,6 +123,7 @@ const toSegments = (
       key: 'context',
       label: 'Контекст',
       percent: fill.percent,
+      color: pickContextColor(fill.percent),
       detail: describeContext(fill),
     })
   }
@@ -117,6 +132,7 @@ const toSegments = (
       key: 'session',
       label: 'Сесія',
       percent: session.percentUsed,
+      color: pickColor(session.percentUsed),
       detail: describeReset(session, now),
     })
   }
@@ -125,6 +141,7 @@ const toSegments = (
       key: 'week',
       label: 'Тиждень',
       percent: week.percentUsed,
+      color: pickColor(week.percentUsed),
       detail: describeReset(week, now),
     })
   }
@@ -205,12 +222,12 @@ export const register: Register = on => {
 
     // The label, the bar, the percent and the detail: strings and one level
     // of Text, which a Text and a Button both draw on every surface.
-    const segmentParts = ({ label, percent, detail }: Segment) => [
+    const segmentParts = ({ label, percent, color, detail }: Segment) => [
       `${label} `,
-      <Text color={pickColor(percent)} mono>
+      <Text color={color} mono>
         {`${drawBar(percent)} `}
       </Text>,
-      <Text color={pickColor(percent)} mono>
+      <Text color={color} mono>
         {`${Math.round(percent)}%`}
       </Text>,
       detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>,

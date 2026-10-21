@@ -72,6 +72,8 @@ const contextOf = async (ui: Finder) => {
   return found?.text
 }
 
+const DARK_RED = '#b91c1c'
+
 const compactions: string[] = []
 const toasts: string[] = []
 const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
@@ -164,7 +166,7 @@ test('the percent is green, yellow or red by how full the window is', async ($, 
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe('error')
+  expect((await ui.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
   expect((await ui.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe('success')
   expect((await ui.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe('warning')
   await ui.unmount()
@@ -295,5 +297,34 @@ test('while a turn runs the context is text, not a button', async ($, on) => {
   expect(await contextOf(ui)).toBe(
     'Контекст ███░░░░░░░ 34% 68k/200k',
   )
+  await ui.unmount()
+})
+
+test('the context is green to 40%, yellow from 41% to 60% and dark red from 61%', async ($, on) => {
+  setUp(on)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const colorAt = async (percent: number) => {
+    await $.session.measure(
+      measurement([], { window: 1_000_000, tokens: Math.round(percent * 10_000), percent }),
+    )
+
+    const shown = new RegExp(`^${Math.round(percent)}%$`)
+
+    return (await ui.find({ type: 'Text', text: shown }))?.props.color
+  }
+
+  expect(await colorAt(5)).toBe('success')
+  expect(await colorAt(40)).toBe('success')
+  expect(await colorAt(40.4)).toBe('success')
+  expect(await colorAt(40.6)).toBe('warning')
+  expect(await colorAt(41)).toBe('warning')
+  expect(await colorAt(60)).toBe('warning')
+  expect(await colorAt(60.4)).toBe('warning')
+  expect(await colorAt(60.6)).toBe(DARK_RED)
+  expect(await colorAt(61)).toBe(DARK_RED)
+  expect(await colorAt(99)).toBe(DARK_RED)
+  expect(await colorAt(100)).toBe(DARK_RED)
+
   await ui.unmount()
 })

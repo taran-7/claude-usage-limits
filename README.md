@@ -14,7 +14,7 @@ The labels and toasts are in Ukrainian: `Контекст` is Context, `Сесі
 - Compaction works only between turns, so while a model turn is running, or a compaction is already under way, the context is plain text instead of a button.
 - **Session**: how much of the five-hour subscription limit is used, and how long until it resets.
 - **Week**: how much of the weekly limit is used, and how long until it resets.
-- Each bar and percentage is green below 70%, yellow from 70% and red from 90%.
+- The context bar and percentage are green up to 40%, yellow from 41% to 60% and dark red from 61%. The session and week bars are green below 70%, yellow from 70% and red from 90%.
 - The countdown refreshes on its own every 30 seconds. The numbers themselves arrive after each model response.
 - Subscription limits exist only for accounts with a subscription, and only after the first response in a session. Without them, only the context is shown.
 - When a limit window has already reset, the time is replaced by `щойно скинуто` ("just reset").
