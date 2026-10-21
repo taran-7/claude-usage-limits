@@ -1,0 +1,12 @@
+{
+  "name": "claude-usage-limits",
+  "owner": { "name": "Olex" },
+  "description": "Claude Code mods by Olex: usage limits and context window in one line above the prompt.",
+  "plugins": [
+    {
+      "name": "usage-limits",
+      "source": "./",
+      "description": "Context window fill, five-hour session limit and weekly limit in one line above the prompt."
+    }
+  ]
+}
