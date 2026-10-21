@@ -6,11 +6,12 @@ A Claude Code mod that draws one row above the prompt: how full the context wind
 Контекст ███░░░░░░░ 34% 68k/200k  ·  Сесія ██░░░░░░░░ 23% 2 год 20 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год
 ```
 
-The labels are in Ukrainian: `Контекст` is Context, `Сесія` is Session, `Тиждень` is Week, and `дн`, `год`, `хв` are days, hours, minutes. They live in `hooks/register.tsx` and are easy to change.
+The labels and toasts are in Ukrainian: `Контекст` is Context, `Сесія` is Session, `Тиждень` is Week, and `дн`, `год`, `хв` are days, hours, minutes. They live in `hooks/register.tsx` and are easy to change.
 
 ## What it shows
 
-- **Context**: how full the context window is, as a percentage, and `tokens/window`.
+- **Context**: how full the context window is, as a percentage, and `tokens/window`. It is a button: click it to compact the conversation, the same call `/compact` makes. A toast says how it went, for example `Контекст стиснуто: 68k → 12k`, and the bar updates to the size after compaction right away.
+- Compaction works only between turns, so while a model turn is running, or a compaction is already under way, the context is plain text instead of a button.
 - **Session**: how much of the five-hour subscription limit is used, and how long until it resets.
 - **Week**: how much of the weekly limit is used, and how long until it resets.
 - Each bar and percentage is green below 70%, yellow from 70% and red from 90%.

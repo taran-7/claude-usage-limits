@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
+import type { On, SessionCompactResult } from 'claude-code'
 
 const NOW = Date.parse('2026-10-21T10:00:00Z')
 const MINUTE_MS = 60_000
@@ -33,6 +34,20 @@ const measurement = (rateLimits: RateLimit[], context: Context = { window: 200_0
 const setUp = (on: On, now = NOW) => {
   const clock = mock.clock(on, { now })
 
+  compactions.length = 0
+  toasts.length = 0
+  compact = DEFAULT_COMPACTION
+
+  on('session.compact', () => {
+    compactions.push('called')
+
+    return compact()
+  })
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+
+    return { value: undefined } as never
+  })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
   on('ui.render', ($, e) => {
@@ -44,9 +59,21 @@ const setUp = (on: On, now = NOW) => {
   return clock
 }
 
+const compactions: string[] = []
+const toasts: string[] = []
+const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
+
+const DEFAULT_COMPACTION = (): SessionCompactResult => ({
+  messages: [SUMMARY],
+  tokensBefore: 68_000,
+  tokensAfter: 12_000,
+})
+
+let compact: () => SessionCompactResult = DEFAULT_COMPACTION
+
 const isoAfter = (ms: number) => new Date(NOW + ms).toISOString()
 
-test('draws context, session and week as one row of text, on every surface', async ($, on) => {
+test('draws context, session and week in one row, on every surface', async ($, on) => {
   setUp(on)
 
   await $.session.measure(
@@ -61,12 +88,15 @@ test('draws context, session and week as one row of text, on every surface', asy
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
-    const row = await ui.find({ type: 'Text', text: /Контекст/ })
 
-    expect(row?.text).toBe(
-      'Контекст ███░░░░░░░ 34% 68k/200k  ·  Сесія ██░░░░░░░░ 23% 2 год 14 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год',
+    expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+      'Контекст ███░░░░░░░ 34% 68k/200k',
     )
-    expect(await ui.findAll({ type: 'Box' })).toHaveLength(0)
+    expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe(
+      'Сесія ██░░░░░░░░ 23% 2 год 14 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год',
+    )
+    expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
+    expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
 
     await ui.unmount()
   }
@@ -177,5 +207,75 @@ test('the context follows each measurement', async ($, on) => {
   await $.session.measure(measurement([], { window: 200_000, tokens: 190_000, percent: 95 }))
   expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ██████████ 95% 190k/200k')
 
+  await ui.unmount()
+})
+
+const measureContext = ($: Engine) =>
+  $.session.measure(measurement([], { window: 200_000, tokens: 68_000, percent: 34 }))
+
+test('pressing the context compacts the conversation and shows the size after it', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+
+  expect(compactions).toEqual(['called'])
+  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+    'Контекст █░░░░░░░░░ 6% 12k/200k',
+  )
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(toasts).toEqual(['Стискаю контекст…', 'Контекст стиснуто: 68k → 12k'])
+  await ui.unmount()
+})
+
+test('a vetoed compaction leaves the context as it was', async ($, on) => {
+  setUp(on)
+  compact = () => ({ skip: 'off' })
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+
+  expect(compactions).toEqual(['called'])
+  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+    'Контекст ███░░░░░░░ 34% 68k/200k',
+  )
+  expect(toasts).toEqual(['Стискаю контекст…', 'Compact скасовано: off'])
+  await ui.unmount()
+})
+
+test('a compaction that fails leaves the context and the button as they were', async ($, on) => {
+  setUp(on)
+  compact = () => {
+    throw new Error('a turn is running')
+  }
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+
+  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+    'Контекст ███░░░░░░░ 34% 68k/200k',
+  )
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(toasts).toEqual(['Стискаю контекст…', 'Compact неможливий, поки триває відповідь'])
+  await ui.unmount()
+})
+
+test('while a turn runs the context is text, not a button', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({
+    ...BAND,
+    surface: 'desktop',
+    props: { ...BAND.props, isWorking: true },
+  })
+
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe(
+    'Контекст ███░░░░░░░ 34% 68k/200k',
+  )
   await ui.unmount()
 })
