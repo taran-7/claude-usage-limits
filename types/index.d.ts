@@ -27,6 +27,8 @@ declare module 'claude-code' {
       limits: Limits
       /** The live context window of this session; null before a reading. */
       context: ContextFill | null
+      /** True while a compaction started from the context button runs. */
+      isCompacting: boolean
       /** Bumped by a timer so the countdown redraws between API responses. */
       tick: number
     }
