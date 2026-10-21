@@ -1,5 +1,11 @@
 import { atom, read, update } from 'claude-code'
-import type { Register, SessionContextUsage, SessionRateLimit } from 'claude-code'
+import type {
+  EngineInterface,
+  Register,
+  SessionCompactResult,
+  SessionContextUsage,
+  SessionRateLimit,
+} from 'claude-code'
 
 import type { ContextFill, LimitWindow, Limits } from '../types'
 
@@ -10,12 +16,18 @@ const DAY_MS = 24 * HOUR_MS
 const WARNING_AT = 70
 const ERROR_AT = 90
 const BAR_WIDTH = 10
+// The context is judged on the percent as it is shown: green up to 40, yellow
+// 41 to 60, dark red from 61. The limits keep WARNING_AT and ERROR_AT.
+const CONTEXT_GREEN_UNTIL = 40
+const CONTEXT_YELLOW_UNTIL = 60
+const DARK_RED = '#b91c1c'
 const SEPARATOR = '  ·  '
 
 type Segment = {
   key: string
   label: string
   percent: number
+  color: string
   detail: string
 }
 
@@ -24,6 +36,7 @@ const limits = atom(
   { session: null, week: null },
 )
 const context = atom({ plugin: 'usage-limits', key: 'context' } as const, null)
+const compacting = atom({ plugin: 'usage-limits', key: 'isCompacting' } as const, false)
 const tick = atom({ plugin: 'usage-limits', key: 'tick' } as const, 0)
 
 const toContextFill = (usage: SessionContextUsage): ContextFill | null => {
@@ -90,6 +103,14 @@ const pickColor = (percent: number): 'success' | 'warning' | 'error' => {
   return 'success'
 }
 
+const pickContextColor = (percent: number): string => {
+  const shown = Math.round(percent)
+
+  if (shown <= CONTEXT_GREEN_UNTIL) return 'success'
+  if (shown <= CONTEXT_YELLOW_UNTIL) return 'warning'
+  return DARK_RED
+}
+
 const toSegments = (
   fill: ContextFill | null,
   { session, week }: Limits,
@@ -102,6 +123,7 @@ const toSegments = (
       key: 'context',
       label: 'Контекст',
       percent: fill.percent,
+      color: pickContextColor(fill.percent),
       detail: describeContext(fill),
     })
   }
@@ -110,6 +132,7 @@ const toSegments = (
       key: 'session',
       label: 'Сесія',
       percent: session.percentUsed,
+      color: pickColor(session.percentUsed),
       detail: describeReset(session, now),
     })
   }
@@ -118,6 +141,7 @@ const toSegments = (
       key: 'week',
       label: 'Тиждень',
       percent: week.percentUsed,
+      color: pickColor(week.percentUsed),
       detail: describeReset(week, now),
     })
   }
@@ -125,9 +149,47 @@ const toSegments = (
   return segments
 }
 
+const describeCompaction = (result: SessionCompactResult): string => {
+  if (result.skip !== undefined) return `Compact скасовано: ${result.skip}`
+  if (result.tokensBefore === undefined || result.tokensAfter === undefined) {
+    return 'Контекст стиснуто'
+  }
+
+  return `Контекст стиснуто: ${formatTokens(result.tokensBefore)} → ${formatTokens(result.tokensAfter)}`
+}
+
+const showCompacted = async ($: EngineInterface, result: SessionCompactResult) => {
+  if (result.skip === undefined && result.tokensAfter !== undefined) {
+    const tokens = result.tokensAfter
+
+    // The engine measures again after the next response; until then the
+    // compaction's own figure is the best reading there is.
+    await update($, context, fill =>
+      fill === null ? null : toContextFill({ window: fill.window, tokens }),
+    )
+  }
+
+  $.ui.toast(describeCompaction(result))
+}
+
+// The same call `/compact` makes. It rejects while a turn runs.
+const compactNow = async ($: EngineInterface) => {
+  await update($, compacting, () => true)
+  $.ui.toast('Стискаю контекст…')
+
+  try {
+    await showCompacted($, await $.session.compact())
+  } catch {
+    $.ui.toast('Compact неможливий, поки триває відповідь')
+  } finally {
+    await update($, compacting, () => false)
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     $.clock.every(TICK_MS, () => update($, tick, n => n + 1))
+    await update($, compacting, () => false)
 
     const usage = await $.session.usage()
     await update($, limits, () => toLimits(usage.rateLimits))
@@ -147,25 +209,32 @@ export const register: Register = on => {
     await read($, tick)
 
     const now = await $.clock.now()
+    const isBusy = await read($, compacting)
     const segments = toSegments(await read($, context), await read($, limits), now)
 
     if (e.props.hasSurvey || segments.length === 0) {
       return next(e)
     }
 
-    const { Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const contextSegment = segments.find(segment => segment.key === 'context')
+    const limitSegments = segments.filter(segment => segment.key !== 'context')
 
-    const drawSegment = ({ key, label, percent, detail }: Segment) => (
-      <Text key={key}>
-        {`${label} `}
-        <Text key={`${key}-bar`} color={pickColor(percent)} mono>
-          {`${drawBar(percent)} `}
-        </Text>
-        <Text key={`${key}-percent`} color={pickColor(percent)} mono>
-          {`${Math.round(percent)}%`}
-        </Text>
-        {detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>}
-      </Text>
+    // The label, the bar, the percent and the detail: strings and one level
+    // of Text, which a Text and a Button both draw on every surface.
+    const segmentParts = ({ label, percent, color, detail }: Segment) => [
+      `${label} `,
+      <Text color={color} mono>
+        {`${drawBar(percent)} `}
+      </Text>,
+      <Text color={color} mono>
+        {`${Math.round(percent)}%`}
+      </Text>,
+      detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>,
+    ]
+
+    const drawSegment = (segment: Segment) => (
+      <Text key={segment.key}>{segmentParts(segment)}</Text>
     )
 
     const separator = (index: number) => (
@@ -174,13 +243,44 @@ export const register: Register = on => {
       </Text>
     )
 
-    // One Text, so every surface keeps it on a single row.
+    // A press compacts only between turns, so while a turn runs, or a
+    // compaction is already under way, the context is plain text.
+    //
+    // No `label` on the Button: the desktop draws a label in place of the
+    // children, and the children are the context the person reads.
+    const drawContext = (segment: Segment) => {
+      if (e.props.isWorking) return drawSegment(segment)
+      if (isBusy) return drawSegment({ ...segment, detail: 'стискаю…' })
+
+      return (
+        <Button
+          key="compact"
+          onPress={() => {
+            void compactNow($)
+          }}
+        >
+          {segmentParts(segment)}
+        </Button>
+      )
+    }
+
     return (
-      <Text wrap="truncate-end">
-        {segments.flatMap((segment, index) =>
-          index === 0 ? [drawSegment(segment)] : [separator(index), drawSegment(segment)],
+      <Box flexDirection="row" alignItems="center" columnGap="sm">
+        {contextSegment === undefined ? null : drawContext(contextSegment)}
+        {contextSegment === undefined || limitSegments.length === 0 ? null : (
+          <Text dimColor>·</Text>
         )}
-      </Text>
+        {limitSegments.length === 0 ? null : (
+          // One Text, so the limits keep a single row on every surface.
+          <Text wrap="truncate-end">
+            {limitSegments.flatMap((segment, index) =>
+              index === 0
+                ? [drawSegment(segment)]
+                : [separator(index), drawSegment(segment)],
+            )}
+          </Text>
+        )}
+      </Box>
     )
   })
 }

@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { Engine } from 'claude-code/testing'
+import type { On, SessionCompactResult } from 'claude-code'
 
 const NOW = Date.parse('2026-10-21T10:00:00Z')
 const MINUTE_MS = 60_000
@@ -33,6 +34,20 @@ const measurement = (rateLimits: RateLimit[], context: Context = { window: 200_0
 const setUp = (on: On, now = NOW) => {
   const clock = mock.clock(on, { now })
 
+  compactions.length = 0
+  toasts.length = 0
+  compact = DEFAULT_COMPACTION
+
+  on('session.compact', () => {
+    compactions.push('called')
+
+    return compact()
+  })
+  on('ui.toast', (_$, e) => {
+    toasts.push(e.text)
+
+    return { value: undefined } as never
+  })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
   on('ui.render', ($, e) => {
@@ -44,9 +59,36 @@ const setUp = (on: On, now = NOW) => {
   return clock
 }
 
+type Finder = {
+  find: (query: { type: string; text: RegExp }) => Promise<{ text: string } | undefined>
+}
+
+// The context is a Button while it can be pressed and a Text while it cannot.
+const contextOf = async (ui: Finder) => {
+  const found =
+    (await ui.find({ type: 'Button', text: /Контекст/ })) ??
+    (await ui.find({ type: 'Text', text: /Контекст/ }))
+
+  return found?.text
+}
+
+const DARK_RED = '#b91c1c'
+
+const compactions: string[] = []
+const toasts: string[] = []
+const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
+
+const DEFAULT_COMPACTION = (): SessionCompactResult => ({
+  messages: [SUMMARY],
+  tokensBefore: 68_000,
+  tokensAfter: 12_000,
+})
+
+let compact: () => SessionCompactResult = DEFAULT_COMPACTION
+
 const isoAfter = (ms: number) => new Date(NOW + ms).toISOString()
 
-test('draws context, session and week as one row of text, on every surface', async ($, on) => {
+test('draws context, session and week in one row, on every surface', async ($, on) => {
   setUp(on)
 
   await $.session.measure(
@@ -61,12 +103,20 @@ test('draws context, session and week as one row of text, on every surface', asy
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
-    const row = await ui.find({ type: 'Text', text: /Контекст/ })
 
-    expect(row?.text).toBe(
-      'Контекст ███░░░░░░░ 34% 68k/200k  ·  Сесія ██░░░░░░░░ 23% 2 год 14 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год',
+    expect(await contextOf(ui)).toBe(
+      'Контекст ███░░░░░░░ 34% 68k/200k',
     )
-    expect(await ui.findAll({ type: 'Box' })).toHaveLength(0)
+    expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe(
+      'Сесія ██░░░░░░░░ 23% 2 год 14 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год',
+    )
+    expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
+    expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+    // No label of its own: the engine names the button by its children, which
+    // are what the desktop draws.
+    expect((await ui.find({ type: 'Button', text: /Контекст/ }))?.props.label).toBe(
+      'Контекст ███░░░░░░░ 34% 68k/200k',
+    )
 
     await ui.unmount()
   }
@@ -116,7 +166,7 @@ test('the percent is green, yellow or red by how full the window is', async ($, 
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe('error')
+  expect((await ui.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
   expect((await ui.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe('success')
   expect((await ui.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe('warning')
   await ui.unmount()
@@ -149,7 +199,7 @@ test('derives the context percent from tokens when the engine reports none', asy
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ███░░░░░░░ 25% 250k/1M')
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░░░ 25% 250k/1M')
   await ui.unmount()
 })
 
@@ -160,7 +210,7 @@ test('shows the context alone when no subscription limits are reported', async (
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(await ui.find({ type: 'Text', text: /Контекст/ })).toBeDefined()
+  expect(await contextOf(ui)).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Сесія/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Тиждень/ })).toBeUndefined()
   await ui.unmount()
@@ -172,10 +222,109 @@ test('the context follows each measurement', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 40_000, percent: 20 }))
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ██░░░░░░░░ 20% 40k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░░░ 20% 40k/200k')
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 190_000, percent: 95 }))
-  expect((await ui.find({ type: 'Text', text: /Контекст/ }))?.text).toBe('Контекст ██████████ 95% 190k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ██████████ 95% 190k/200k')
+
+  await ui.unmount()
+})
+
+const measureContext = ($: Engine) =>
+  $.session.measure(measurement([], { window: 200_000, tokens: 68_000, percent: 34 }))
+
+test('pressing the context compacts the conversation and shows the size after it', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+
+  expect(compactions).toEqual(['called'])
+  expect(await contextOf(ui)).toBe(
+    'Контекст █░░░░░░░░░ 6% 12k/200k',
+  )
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(toasts).toEqual(['Стискаю контекст…', 'Контекст стиснуто: 68k → 12k'])
+  await ui.unmount()
+})
+
+test('a vetoed compaction leaves the context as it was', async ($, on) => {
+  setUp(on)
+  compact = () => ({ skip: 'off' })
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+
+  expect(compactions).toEqual(['called'])
+  expect(await contextOf(ui)).toBe(
+    'Контекст ███░░░░░░░ 34% 68k/200k',
+  )
+  expect(toasts).toEqual(['Стискаю контекст…', 'Compact скасовано: off'])
+  await ui.unmount()
+})
+
+test('a compaction that fails leaves the context and the button as they were', async ($, on) => {
+  setUp(on)
+  compact = () => {
+    throw new Error('a turn is running')
+  }
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+
+  expect(await contextOf(ui)).toBe(
+    'Контекст ███░░░░░░░ 34% 68k/200k',
+  )
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(toasts).toEqual(['Стискаю контекст…', 'Compact неможливий, поки триває відповідь'])
+  await ui.unmount()
+})
+
+test('while a turn runs the context is text, not a button', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({
+    ...BAND,
+    surface: 'desktop',
+    props: { ...BAND.props, isWorking: true },
+  })
+
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect(await contextOf(ui)).toBe(
+    'Контекст ███░░░░░░░ 34% 68k/200k',
+  )
+  await ui.unmount()
+})
+
+test('the context is green to 40%, yellow from 41% to 60% and dark red from 61%', async ($, on) => {
+  setUp(on)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const colorAt = async (percent: number) => {
+    await $.session.measure(
+      measurement([], { window: 1_000_000, tokens: Math.round(percent * 10_000), percent }),
+    )
+
+    const shown = new RegExp(`^${Math.round(percent)}%$`)
+
+    return (await ui.find({ type: 'Text', text: shown }))?.props.color
+  }
+
+  expect(await colorAt(5)).toBe('success')
+  expect(await colorAt(40)).toBe('success')
+  expect(await colorAt(40.4)).toBe('success')
+  expect(await colorAt(40.6)).toBe('warning')
+  expect(await colorAt(41)).toBe('warning')
+  expect(await colorAt(60)).toBe('warning')
+  expect(await colorAt(60.4)).toBe('warning')
+  expect(await colorAt(60.6)).toBe(DARK_RED)
+  expect(await colorAt(61)).toBe(DARK_RED)
+  expect(await colorAt(99)).toBe(DARK_RED)
+  expect(await colorAt(100)).toBe(DARK_RED)
 
   await ui.unmount()
 })
