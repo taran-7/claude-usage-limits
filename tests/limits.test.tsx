@@ -108,14 +108,11 @@ test('draws context, session and week in one row, on every surface', async ($, o
     const ui = await $.ui.mount({ ...BAND, surface })
 
     expect(await contextOf(ui)).toBe(
-      'Контекст ███░░░░░░░ 34% 68k/200k',
-    )
-    expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe(
-      'Сесія ██░░░░░░░░ 23% 2 год 14 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год',
+      'Контекст ███░░░░░ 34% 68k/200k · Сесія ██░░░░░░ 23% 2 год 14 хв · Тиждень ███░░░░░ 41% 3 дн 5 год',
     )
     expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
     expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
-    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('Стиснути')
+    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('🗜️')
 
     await ui.unmount()
   }
@@ -130,11 +127,11 @@ test('the countdown moves with the clock between responses', async ($, on) => {
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █░░░░░░░░░ 10% 1 год 30 хв')
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █░░░░░░░ 10% 1 год 30 хв')
 
   await clock.advance(31 * MINUTE_MS)
 
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █░░░░░░░░░ 10% 59 хв')
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █░░░░░░░ 10% 59 хв')
   await ui.unmount()
 })
 
@@ -146,7 +143,9 @@ test('a window that already reset says so instead of a negative time', async ($,
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ██████████ 99% щойно скинуто')
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ████████ 99% щойно скинуто')
+  // Nothing to compact without a context reading, so no button either.
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
   await ui.unmount()
 })
 
@@ -198,7 +197,7 @@ test('derives the context percent from tokens when the engine reports none', asy
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░░░ 25% 250k/1M')
+  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░ 25% 250k/1M')
   await ui.unmount()
 })
 
@@ -221,10 +220,10 @@ test('the context follows each measurement', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 40_000, percent: 20 }))
-  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░░░ 20% 40k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░ 20% 40k/200k')
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 190_000, percent: 95 }))
-  expect(await contextOf(ui)).toBe('Контекст ██████████ 95% 190k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ████████ 95% 190k/200k')
 
   await ui.unmount()
 })
@@ -241,7 +240,7 @@ test('pressing the context compacts the conversation and shows the size after it
 
   expect(compactions).toEqual(['called'])
   expect(await contextOf(ui)).toBe(
-    'Контекст █░░░░░░░░░ 6% 12k/200k',
+    'Контекст ░░░░░░░░ 6% 12k/200k',
   )
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
   expect(toasts).toEqual(['Стискаю контекст…', 'Контекст стиснуто: 68k → 12k'])
@@ -258,7 +257,7 @@ test('a vetoed compaction leaves the context as it was', async ($, on) => {
 
   expect(compactions).toEqual(['called'])
   expect(await contextOf(ui)).toBe(
-    'Контекст ███░░░░░░░ 34% 68k/200k',
+    'Контекст ███░░░░░ 34% 68k/200k',
   )
   expect(toasts).toEqual(['Стискаю контекст…', 'Compact скасовано: off'])
   await ui.unmount()
@@ -275,14 +274,14 @@ test('a compaction that fails leaves the context and the button as they were', a
   await ui.press({ key: 'compact' })
 
   expect(await contextOf(ui)).toBe(
-    'Контекст ███░░░░░░░ 34% 68k/200k',
+    'Контекст ███░░░░░ 34% 68k/200k',
   )
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
   expect(toasts).toEqual(['Стискаю контекст…', 'Compact неможливий, поки триває відповідь'])
   await ui.unmount()
 })
 
-test('while a compaction runs the button gives way to a dim note', async ($, on) => {
+test('while a compaction runs the button gives way to an hourglass', async ($, on) => {
   const clock = setUp(on)
   holdCompaction = true
   await measureContext($)
@@ -293,13 +292,13 @@ test('while a compaction runs the button gives way to a dim note', async ($, on)
   await clock.advance(0)
 
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
-  expect(await ui.find({ type: 'Text', text: /стискаю/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
 
   releaseCompaction()
   await pressed
 
   expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
-  expect(await ui.find({ type: 'Text', text: /стискаю/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeUndefined()
   await ui.unmount()
 })
 

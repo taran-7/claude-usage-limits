@@ -15,13 +15,14 @@ const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS
 const WARNING_AT = 70
 const ERROR_AT = 90
-const BAR_WIDTH = 10
+const BAR_WIDTH = 8
 // The context is judged on the percent as it is shown: green up to 40, yellow
 // 41 to 60, dark red from 61. The limits keep WARNING_AT and ERROR_AT.
 const CONTEXT_GREEN_UNTIL = 40
 const CONTEXT_YELLOW_UNTIL = 60
 const DARK_RED = '#b91c1c'
-const SEPARATOR = '  ·  '
+const SEPARATOR = ' · '
+const COMPACT_ICON = '🗜️'
 
 type Segment = {
   key: string
@@ -217,8 +218,7 @@ export const register: Register = on => {
     }
 
     const { Box, Button, Text } = $.ui.resolve(e)
-    const contextSegment = segments.find(segment => segment.key === 'context')
-    const limitSegments = segments.filter(segment => segment.key !== 'context')
+    const hasContext = segments.some(segment => segment.key === 'context')
 
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
       <Text key={key}>
@@ -239,16 +239,16 @@ export const register: Register = on => {
       </Text>
     )
 
-    // The context stays plain text next to the button: the desktop draws a
-    // Button's children without their colours, and the bar is the colour.
+    // The icon stands for the context beside it, which stays plain coloured
+    // text: the desktop draws a Button's children without their colours.
     // Pressed during a turn it only toasts, as the compaction is refused.
     const drawCompact = () =>
       isBusy ? (
-        <Text dimColor>стискаю…</Text>
+        <Text dimColor>⏳</Text>
       ) : (
         <Button
           key="compact"
-          label="Стиснути"
+          label={COMPACT_ICON}
           dimColor
           onPress={() => {
             void compactNow($)
@@ -258,21 +258,15 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="row" alignItems="center" columnGap="sm">
-        {contextSegment === undefined ? null : drawSegment(contextSegment)}
-        {contextSegment === undefined ? null : drawCompact()}
-        {contextSegment === undefined || limitSegments.length === 0 ? null : (
-          <Text dimColor>·</Text>
-        )}
-        {limitSegments.length === 0 ? null : (
-          // One Text, so the limits keep a single row on every surface.
-          <Text wrap="truncate-end">
-            {limitSegments.flatMap((segment, index) =>
-              index === 0
-                ? [drawSegment(segment)]
-                : [separator(index), drawSegment(segment)],
-            )}
-          </Text>
-        )}
+        {hasContext ? drawCompact() : null}
+        {/* One Text, so the segments keep a single row on every surface. */}
+        <Text wrap="truncate-end">
+          {segments.flatMap((segment, index) =>
+            index === 0
+              ? [drawSegment(segment)]
+              : [separator(index), drawSegment(segment)],
+          )}
+        </Text>
       </Box>
     )
   })

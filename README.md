@@ -3,15 +3,16 @@
 A Claude Code mod that draws one row above the prompt: how full the context window of the current session is, the five-hour subscription limit and the weekly limit, each with a bar and the time left until it resets.
 
 ```
-Контекст ███░░░░░░░ 34% 68k/200k  ·  Сесія ██░░░░░░░░ 23% 2 год 20 хв  ·  Тиждень ████░░░░░░ 41% 3 дн 5 год
+🗜️ Контекст ███░░░░░ 34% 68k/200k · Сесія ██░░░░░░ 23% 2 год 20 хв · Тиждень ███░░░░░ 41% 3 дн 5 год
 ```
 
 The labels and toasts are in Ukrainian: `Контекст` is Context, `Сесія` is Session, `Тиждень` is Week, and `дн`, `год`, `хв` are days, hours, minutes. They live in `hooks/register.tsx` and are easy to change.
 
 ## What it shows
 
-- **Context**: how full the context window is, as a percentage, and `tokens/window`. Next to it is a small `Стиснути` ("Compact") button: click it to compact the conversation, the same call `/compact` makes. A toast says how it went, for example `Контекст стиснуто: 68k → 12k`, and the bar updates to the size after compaction right away.
-- Compaction works only between turns. Pressed during a model turn, the button only shows a toast that it cannot compact now. While a compaction runs, the button is replaced by a dim `стискаю…` ("compacting").
+- **Compact button**: a small icon (a clamp) at the left, which compacts the conversation, the same call `/compact` makes. A toast says how it went, for example `Контекст стиснуто: 68k → 12k`, and the context bar updates to the size after compaction right away. The button shows only while there is a context reading.
+- Compaction works only between turns. Pressed during a model turn, the button only shows a toast that it cannot compact now. While a compaction runs, the button is replaced by an hourglass.
+- **Context**: how full the context window is, as a percentage, and `tokens/window`.
 - **Session**: how much of the five-hour subscription limit is used, and how long until it resets.
 - **Week**: how much of the weekly limit is used, and how long until it resets.
 - The context bar and percentage are green up to 40%, yellow from 41% to 60% and dark red from 61%. The session and week bars are green below 70%, yellow from 70% and red from 90%.
