@@ -151,8 +151,11 @@ test('draws context, session and week in one row, on every surface', async ($, o
     expect(await contextOf(ui)).toBe(
       'Context ███░░░░░ 34% 68k/200k · Session ██░░░░░░ 23% 2h 14m · Week ███░░░░░ 41% 3d 5h',
     )
-    // The row that spans the band and the part inside it that grows.
-    expect(await ui.findAll({ type: 'Box' })).toHaveLength(2)
+    // The row that spans the band, the compact button's slot at its left and
+    // the readings' own part, which grows and centres them.
+    const boxes = await ui.findAll({ type: 'Box' })
+    expect(boxes).toHaveLength(3)
+    expect(boxes.filter(box => box.props.justifyContent === 'center')).toHaveLength(1)
     expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
     expect((await ui.find({ type: 'Button', text: /🗜/ }))?.props.label).toBe('🗜️')
     expect((await ui.find({ type: 'Button', text: /×/ }))?.props.role).toBe('dismiss')

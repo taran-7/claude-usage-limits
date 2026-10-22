@@ -359,18 +359,20 @@ export const register: Register = on => {
         />
       )
 
-    // The outer row spans the band and the left part grows into the room that
-    // is left, which puts the close button at the band's right edge.
+    // The outer row spans the band: the compact button at its left edge, the
+    // close button at its right, and the readings centred in the room between.
     return (
       <Box flexDirection="row" alignItems="center" columnGap="sm" width="100%">
+        <Box flexDirection="row" alignItems="center">
+          {hasContext ? drawCompact() : null}
+        </Box>
         <Box
           flexDirection="row"
           alignItems="center"
-          columnGap="sm"
+          justifyContent="center"
           flexGrow={1}
           flexShrink={1}
         >
-          {hasContext ? drawCompact() : null}
           {/* One Text, so the segments keep a single row on every surface. */}
           <Text wrap="truncate-end">
             {segments.flatMap((segment, index) =>
