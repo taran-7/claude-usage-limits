@@ -10,8 +10,8 @@ The labels and toasts are in Ukrainian: `Контекст` is Context, `Сесі
 
 ## What it shows
 
-- **Compact button**: a small icon (a clamp) at the left, which compacts the conversation, the same call `/compact` makes. A toast says how it went, for example `Контекст стиснуто: 68k → 12k`, and the context bar updates to the size after compaction right away. The button shows only while there is a context reading.
-- Compaction works only between turns. Pressed during a model turn, the button only shows a toast that it cannot compact now. While a compaction runs, the button is replaced by an hourglass.
+- **Compact button**: a small icon (a clamp) at the left. It runs the real `/compact` command, so the command and its result show up in the chat as if you had typed it. Pressed while a model turn is running, it waits and runs as soon as the chat is free. While it runs, the button is replaced by an hourglass.
+- **After any compaction** (the button, a typed `/compact` or the automatic one) the context bar updates at once, from a local estimate of the new conversation. The engine reports its own figure only with the next response, and the bar switches to it then.
 - **Context**: how full the context window is, as a percentage, and `tokens/window`.
 - **Close button**: a small `×` at the right edge hides the band in the current chat. It shows again in a new chat, or at once with the `/limits` command, which switches the band off and on and works also while a model turn is running.
 - **Session**: how much of the five-hour subscription limit is used, and how long until it resets.
