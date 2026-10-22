@@ -259,20 +259,30 @@ export const register: Register = on => {
         />
       )
 
+    // The outer row spans the band and the left part grows into the room that
+    // is left, which puts the close button at the band's right edge.
     return (
-      <Box flexDirection="row" alignItems="center" columnGap="sm">
-        {hasContext ? drawCompact() : null}
-        {/* One Text, so the segments keep a single row on every surface. */}
-        <Text wrap="truncate-end">
-          {segments.flatMap((segment, index) =>
-            index === 0
-              ? [drawSegment(segment)]
-              : [separator(index), drawSegment(segment)],
-          )}
-        </Text>
-        {/* The desktop draws a dismiss Button as its own close control at the
-            band's trailing edge. It hides the band in this chat only: the
-            state is the session's, so a new chat shows it again. */}
+      <Box flexDirection="row" alignItems="center" columnGap="sm" width="100%">
+        <Box
+          flexDirection="row"
+          alignItems="center"
+          columnGap="sm"
+          flexGrow={1}
+          flexShrink={1}
+        >
+          {hasContext ? drawCompact() : null}
+          {/* One Text, so the segments keep a single row on every surface. */}
+          <Text wrap="truncate-end">
+            {segments.flatMap((segment, index) =>
+              index === 0
+                ? [drawSegment(segment)]
+                : [separator(index), drawSegment(segment)],
+            )}
+          </Text>
+        </Box>
+        {/* The desktop draws a dismiss Button as a close control. It hides the
+            band in this chat only: the state is the session's, so a new chat
+            shows it again. */}
         <Button
           key="close"
           role="dismiss"

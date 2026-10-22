@@ -110,7 +110,8 @@ test('draws context, session and week in one row, on every surface', async ($, o
     expect(await contextOf(ui)).toBe(
       'Контекст ███░░░░░ 34% 68k/200k · Сесія ██░░░░░░ 23% 2 год 14 хв · Тиждень ███░░░░░ 41% 3 дн 5 год',
     )
-    expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
+    // The row that spans the band and the part inside it that grows.
+    expect(await ui.findAll({ type: 'Box' })).toHaveLength(2)
     expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
     expect((await ui.find({ type: 'Button', text: /🗜/ }))?.props.label).toBe('🗜️')
     expect((await ui.find({ type: 'Button', text: /×/ }))?.props.role).toBe('dismiss')
