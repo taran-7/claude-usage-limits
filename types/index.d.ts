@@ -21,6 +21,13 @@ export type ContextFill = {
   window: number
 }
 
+export type Handover =
+  | { phase: 'idle' }
+  /** The model is writing the file at `path`; `skip` counts the turns that end first. */
+  | { phase: 'writing'; path: string; skip: number }
+  /** The file at `path` is written. */
+  | { phase: 'ready'; path: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'usage-limits': {
@@ -29,6 +36,8 @@ declare module 'claude-code' {
       context: ContextFill | null
       /** True while a compaction started from the context button runs. */
       isCompacting: boolean
+      /** Where the handover started from the button stands. */
+      handover: Handover
       /** True once the person closed the band in this chat. */
       isHidden: boolean
       /** Bumped by a timer so the countdown redraws between API responses. */

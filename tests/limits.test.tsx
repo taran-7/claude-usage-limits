@@ -58,6 +58,11 @@ let estimatedTokens = 0
 // The engine's own figure for the context: absent after a compaction, until the
 // next response.
 let engineTokens: number | undefined
+const prompts: string[] = []
+const copies: string[] = []
+let handoverWritten = true
+let promptRefused = false
+let copyTakes = true
 
 // What the engine does beneath the plugin: it echoes a measurement, runs a
 // command, compacts, estimates the live context and draws an empty band of its
@@ -69,6 +74,11 @@ const setUp = (on: On, now = NOW) => {
   commands.length = 0
   registered.length = 0
   toasts.length = 0
+  prompts.length = 0
+  copies.length = 0
+  handoverWritten = true
+  promptRefused = false
+  copyTakes = true
   compact = DEFAULT_COMPACTION
   runCommand = () => ({ text: 'ok' })
   holdCommand = false
@@ -102,6 +112,21 @@ const setUp = (on: On, now = NOW) => {
       },
     },
   }) as never)
+  on('turn.complete', (_$, e) => ({ text: e.answer }))
+  on('session.cwd', () => ({ value: '/work/app/' }) as never)
+  on('prompt.submit', (_$, e) => {
+    if (promptRefused) return { drop: 'refused' }
+
+    prompts.push(e.text)
+
+    return { text: e.text }
+  })
+  on('fs.exists', () => ({ value: handoverWritten }) as never)
+  on('ui.copy', (_$, e) => {
+    copies.push(e.text)
+
+    return { value: copyTakes ? { isCopied: true } : { isCopied: false, reason: 'no clipboard' } } as never
+  })
   on('ui.toast', (_$, e) => {
     toasts.push(e.text)
 
@@ -578,6 +603,165 @@ test('the close button is there with the limits alone, and the compact button is
 
   expect(await ui.findAll({ type: 'Button', text: /×/ })).toHaveLength(1)
   expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(0)
+  await ui.unmount()
+})
+
+const HANDOVER_PATH = '/work/app/.claude/handovers/handover-2026-10-21-1000.md'
+
+const endTurn = ($: Engine, agentId?: string) =>
+  $.turn.complete({
+    answer: '',
+    durationMs: 1,
+    isAborted: false,
+    reason: 'answer',
+    turnId: 'turn',
+    ...(agentId === undefined ? {} : { agentId }),
+  })
+
+const BUTTONS = {
+  handover: { type: 'Button', text: /🤝/ },
+  copy: { type: 'Button', text: /📋/ },
+} as const
+
+test('the handover button asks the model to write the file at a path chosen here', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect((await ui.find(BUTTONS.handover))?.props.label).toBe('🤝')
+
+  await ui.press({ key: 'handover' })
+
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]).toContain(`Save it as a Markdown file at ${HANDOVER_PATH}.`)
+  expect(prompts[0]).toContain('## Next steps')
+  expect(prompts[0]).not.toContain('—')
+  await ui.unmount()
+})
+
+test('while the handover is written the button gives way to an hourglass, then a copy button appears', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'handover' })
+
+  expect(await ui.findAll(BUTTONS.handover)).toHaveLength(0)
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
+  expect(await ui.findAll(BUTTONS.copy)).toHaveLength(0)
+
+  await endTurn($)
+
+  expect(await ui.findAll(BUTTONS.handover)).toHaveLength(1)
+  expect(await ui.findAll(BUTTONS.copy)).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeUndefined()
+  expect(toasts).toEqual(['Handover saved. 📋 copies the line for the next session.'])
+  await ui.unmount()
+})
+
+test('the copy button puts the line that points the next session at the file on the clipboard', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'handover' })
+  await endTurn($)
+  toasts.length = 0
+
+  await ui.press({ key: 'copy-handover' })
+
+  expect(copies).toEqual([
+    `Read ${HANDOVER_PATH} first. It is a handover from another session. Continue from its "Next steps".`,
+  ])
+  expect(toasts).toEqual(['Handover line copied'])
+  await ui.unmount()
+})
+
+test('a clipboard that refuses is said so', async ($, on) => {
+  setUp(on)
+  copyTakes = false
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'handover' })
+  await endTurn($)
+  toasts.length = 0
+
+  await ui.press({ key: 'copy-handover' })
+
+  expect(toasts).toEqual(['Could not copy the handover line'])
+  await ui.unmount()
+})
+
+test('a turn that ends without the file leaves no copy button and says so', async ($, on) => {
+  setUp(on)
+  handoverWritten = false
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'handover' })
+  await endTurn($)
+
+  expect(await ui.findAll(BUTTONS.handover)).toHaveLength(1)
+  expect(await ui.findAll(BUTTONS.copy)).toHaveLength(0)
+  expect(toasts).toEqual(['The handover file was not written'])
+  await ui.unmount()
+})
+
+test("a subagent's turn does not settle the handover", async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'handover' })
+  await endTurn($, 'agent')
+
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
+  expect(toasts).toEqual([])
+  await ui.unmount()
+})
+
+test("pressed during a turn, the handover waits for that turn to end first", async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...BAND.props, isWorking: true } })
+  await ui.press({ key: 'handover' })
+  await endTurn($)
+
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
+  expect(toasts).toEqual([])
+
+  await endTurn($)
+
+  expect(await ui.findAll(BUTTONS.copy)).toHaveLength(1)
+  await ui.unmount()
+})
+
+test('a prompt the engine refuses leaves the button as it was', async ($, on) => {
+  setUp(on)
+  promptRefused = true
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'handover' })
+
+  expect(toasts).toEqual(['Handover could not be started'])
+  expect(await ui.findAll(BUTTONS.handover)).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a handover that is not being written is not settled by a turn', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await endTurn($)
+
+  expect(toasts).toEqual([])
+  expect(await ui.findAll(BUTTONS.copy)).toHaveLength(0)
   await ui.unmount()
 })
 

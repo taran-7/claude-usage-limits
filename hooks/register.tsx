@@ -2,12 +2,13 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
+  RenderSurface,
   SessionAppendMessage,
   SessionContextUsage,
   SessionRateLimit,
 } from 'claude-code'
 
-import type { ContextFill, LimitWindow, Limits } from '../types'
+import type { ContextFill, Handover, LimitWindow, Limits } from '../types'
 
 const TICK_MS = 30_000
 const MINUTE_MS = 60_000
@@ -23,7 +24,10 @@ const CONTEXT_YELLOW_UNTIL = 60
 const DARK_RED = '#b91c1c'
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
+const HANDOVER_ICON = '🤝'
+const COPY_ICON = '📋'
 const CLOSE_ICON = '×'
+const HANDOVER_DIR = '.claude/handovers'
 const COMMAND = 'limits'
 const COMPACTION_SETTLE_MS = 1_500
 
@@ -41,6 +45,12 @@ const limits = atom(
 )
 const context = atom({ plugin: 'usage-limits', key: 'context' } as const, null)
 const compacting = atom({ plugin: 'usage-limits', key: 'isCompacting' } as const, false)
+const IDLE: Handover = { phase: 'idle' }
+
+const handover = atom(
+  { plugin: 'usage-limits', key: 'handover' } as const,
+  IDLE,
+)
 const hidden = atom({ plugin: 'usage-limits', key: 'isHidden' } as const, false)
 const tick = atom({ plugin: 'usage-limits', key: 'tick' } as const, 0)
 
@@ -230,6 +240,113 @@ const compactNow = async ($: EngineInterface) => {
   }
 }
 
+// Named by the minute it was asked for, in UTC so that the name does not
+// depend on the machine's zone.
+const handoverPath = (cwd: string, now: number): string => {
+  const stamp = new Date(now).toISOString()
+  const day = stamp.slice(0, 10)
+  const minute = `${stamp.slice(11, 13)}${stamp.slice(14, 16)}`
+
+  return `${cwd.replace(/\/+$/, '')}/${HANDOVER_DIR}/handover-${day}-${minute}.md`
+}
+
+const handoverPrompt = (path: string): string =>
+  [
+    'Write a handover document for another Claude session that will continue this work without access to this chat.',
+    '',
+    `Save it as a Markdown file at ${path}. Create the folder if it is missing. Use the Write tool. Do not commit or push it.`,
+    '',
+    'Use only this conversation and what was verified in it. Do not invent anything. Where something is not known, write "unknown".',
+    '',
+    'Structure:',
+    '',
+    '# Handover: <topic>',
+    '',
+    '## Goal',
+    'What the user wants and why, in their terms.',
+    '',
+    '## Current state',
+    'Done, in progress, not started. Name branches, PRs and commits.',
+    '',
+    '## Decisions and constraints',
+    "Each decision with its reason. Include the user's rules and preferences, quoting the important ones verbatim, and what was ruled out and why.",
+    '',
+    '## Key facts',
+    'Exact file paths, commands, versions, IDs and URLs the next session needs, and how to run or test the work.',
+    '',
+    '## Tried and failed',
+    'Approaches that did not work and the cause, so they are not repeated.',
+    '',
+    '## Open questions and risks',
+    'What is undecided or unverified.',
+    '',
+    '## Next steps',
+    'An ordered list. The first step must be doable at once.',
+    '',
+    '## Start here',
+    'One short paragraph for the next session to read first, and the files to open first.',
+    '',
+    'Rules: write in the language the user writes in. No secrets, tokens or passwords. Keep it under about 150 lines. Prefer facts over narrative. Do not use the em dash character.',
+    '',
+    'When the file is written, reply with only its absolute path and a three-line summary.',
+  ].join('\n')
+
+// What the person pastes as the first message of the next session.
+const handoverLine = (path: string): string =>
+  `Read ${path} first. It is a handover from another session. Continue from its "Next steps".`
+
+// Asks the model to write the handover to a path chosen here, so the path is
+// known without reading the reply. The prompt is queued until the session is
+// idle; `isBusy` says a turn is running now, whose end is not the handover's.
+const startHandover = async ($: EngineInterface, isBusy: boolean) => {
+  try {
+    const path = handoverPath(await $.session.cwd(), await $.clock.now())
+
+    await update($, handover, (): Handover => ({ phase: 'writing', path, skip: isBusy ? 1 : 0 }))
+
+    const result = await $.prompt
+      .submit({ text: handoverPrompt(path), asUser: true })
+      .catch(() => ({ drop: 'failed' }))
+
+    if (result.drop !== undefined) {
+      await update($, handover, (): Handover => IDLE)
+      $.ui.toast('Handover could not be started')
+    }
+  } catch {
+    $.ui.toast('Handover could not be started')
+  }
+}
+
+// At the end of the handover's own turn the file is there, or it is not.
+const settleHandover = async ($: EngineInterface) => {
+  const state = await read($, handover)
+
+  if (state.phase !== 'writing') return
+
+  if (state.skip > 0) {
+    await update($, handover, (): Handover => ({ ...state, skip: state.skip - 1 }))
+    return
+  }
+
+  const isWritten = await $.fs.exists(state.path).catch(() => false)
+
+  await update($, handover, (): Handover => (isWritten ? { phase: 'ready', path: state.path } : IDLE))
+  $.ui.toast(
+    isWritten
+      ? `Handover saved. ${COPY_ICON} copies the line for the next session.`
+      : 'The handover file was not written',
+  )
+}
+
+const copyHandoverLine = async ($: EngineInterface, path: string, surface: RenderSurface) => {
+  const isCopied = await $.ui
+    .copy({ text: handoverLine(path), surface })
+    .then(result => result.isCopied)
+    .catch(() => false)
+
+  $.ui.toast(isCopied ? 'Handover line copied' : 'Could not copy the handover line')
+}
+
 // A refused name must not stop the timer and the readings that follow.
 const registerCommand = async ($: EngineInterface) => {
   try {
@@ -251,6 +368,7 @@ export const register: Register = on => {
       return update($, tick, n => n + 1)
     })
     await update($, compacting, () => false)
+    await update($, handover, (): Handover => IDLE)
     await registerCommand($)
 
     const usage = await $.session.usage()
@@ -299,6 +417,16 @@ export const register: Register = on => {
     return result
   }).catch(($, e, next) => next(e))
 
+  on('turn.complete', async ($, e, next) => {
+    const result = await next(e)
+
+    if (e.agentId === undefined) {
+      await settleHandover($)
+    }
+
+    return result
+  }).catch(($, e, next) => next(e))
+
   on('session.measure', async ($, e, next) => {
     await update($, limits, () => toLimits(e.rateLimits))
     // Just after a compaction the engine has no context figure until the next
@@ -314,6 +442,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const isBusy = await read($, compacting)
     const isHidden = await read($, hidden)
+    const handing = await read($, handover)
     const segments = toSegments(await read($, context), await read($, limits), now)
 
     if (e.props.hasSurvey || isHidden || segments.length === 0) {
@@ -359,12 +488,50 @@ export const register: Register = on => {
         />
       )
 
-    // The outer row spans the band: the compact button at its left edge, the
-    // close button at its right, and the readings centred in the room between.
+    // The handover asks the model to write the file, so it works as `compact`
+    // does: an hourglass while it runs, then a second button copies the line
+    // that points the next session at the file.
+    const drawHandover = () => {
+      if (handing.phase === 'writing') {
+        return [<Text key="handover" dimColor>⏳</Text>]
+      }
+
+      const handoverButton = (
+        <Button
+          key="handover"
+          label={HANDOVER_ICON}
+          dimColor
+          onPress={() => {
+            void startHandover($, e.props.isWorking)
+          }}
+        />
+      )
+
+      if (handing.phase !== 'ready') return [handoverButton]
+
+      const { path } = handing
+
+      return [
+        handoverButton,
+        <Button
+          key="copy-handover"
+          label={COPY_ICON}
+          dimColor
+          onPress={press => {
+            void copyHandoverLine($, path, press.surface)
+          }}
+        />,
+      ]
+    }
+
+    // The outer row spans the band: the compact and handover buttons at its
+    // left edge, the close button at its right, and the readings centred in
+    // the room between.
     return (
       <Box flexDirection="row" alignItems="center" columnGap="sm" width="100%">
-        <Box flexDirection="row" alignItems="center">
+        <Box flexDirection="row" alignItems="center" columnGap="sm">
           {hasContext ? drawCompact() : null}
+          {drawHandover()}
         </Box>
         <Box
           flexDirection="row"
