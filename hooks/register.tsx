@@ -357,7 +357,11 @@ export const register: Register = on => {
     // In the editor's panel the band is one small line: the labels are left
     // out and the text is set in the caption size.
     const isEditor = e.surface === 'vscode'
-    const textProps = isEditor ? { size: 'caption' as const } : {}
+    // The editor wraps a Text unless it says otherwise, and the parts inside the
+    // one that truncates wrap on their own, so each says it.
+    const textProps = isEditor
+      ? { size: 'caption' as const, wrap: 'truncate-end' as const }
+      : {}
     const tint = (color: string) => (isEditor && color === 'warning' ? EDITOR_YELLOW : color)
 
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (

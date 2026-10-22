@@ -614,6 +614,10 @@ test('in the editor the band is one small line without the labels', async ($, on
   expect(row?.props.flexWrap).toBe('nowrap')
   expect(readings?.props.minWidth).toBe(0)
   expect((await ui.find({ type: 'Text', text: /34%/ }))?.props.size).toBe('caption')
+  // Every part says it truncates, as the editor wraps the ones that do not.
+  const texts = await ui.findAll({ type: 'Text' })
+  expect(texts.length).toBeGreaterThan(1)
+  expect(texts.filter(text => text.props.wrap !== 'truncate-end')).toHaveLength(0)
   expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
   expect((await ui.find({ type: 'Button', text: /×/ }))?.props.role).toBe('dismiss')
   await ui.unmount()
