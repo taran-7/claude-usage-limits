@@ -5,6 +5,7 @@ import type {
   SessionAppendMessage,
   SessionContextUsage,
   SessionRateLimit,
+  SessionUsage,
 } from 'claude-code'
 
 import type { ContextFill, LimitWindow, Limits } from '../types'
@@ -26,6 +27,7 @@ const DARK_RED = '#b91c1c'
 const EDITOR_YELLOW = '#ca8a04'
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
+const REFRESH_ICON = '↻'
 const CLOSE_ICON = '×'
 const COMMAND = 'limits'
 const COMPACTION_SETTLE_MS = 1_500
@@ -172,18 +174,44 @@ const toSegments = (
 // What the context is worth once a compaction is done. The engine reports its
 // own figure only with the next response, so until then its estimate of the
 // live transcript is the best reading there is.
+// The figure the engine reports, or else its estimate of the live transcript.
+const fillFrom = (usage: SessionUsage): ContextFill | null =>
+  toContextFill(usage.context) ??
+  toContextFill({ window: usage.context.window, tokens: usage.context.breakdown?.totalTokens })
+
 const refreshContext = async ($: EngineInterface) => {
   try {
-    const { context: usage } = await $.session.usage({ breakdown: 'summary' })
-    const fill =
-      toContextFill(usage) ??
-      toContextFill({ window: usage.window, tokens: usage.breakdown?.totalTokens })
+    const fill = fillFrom(await $.session.usage({ breakdown: 'summary' }))
 
     if (fill !== null) {
       await update($, context, () => fill)
     }
   } catch {
     // The bar is a convenience: the next response reports the real figure.
+  }
+}
+
+// A window the engine has no reading for keeps the one the row already has.
+const mergeLimits = (held: Limits, latest: Limits): Limits => ({
+  session: latest.session ?? held.session,
+  week: latest.week ?? held.week,
+})
+
+// Asks the engine for everything it knows now. The limits are the last ones a
+// response reported, so a press brings the countdowns and the context up to
+// date, not a figure the account has not been sent yet.
+const refreshReadings = async ($: EngineInterface) => {
+  try {
+    const usage = await $.session.usage({ breakdown: 'summary' })
+    const fill = fillFrom(usage)
+
+    await update($, limits, held => mergeLimits(held, toLimits(usage.rateLimits)))
+    if (fill !== null) {
+      await update($, context, () => fill)
+    }
+    $.ui.toast('Readings refreshed')
+  } catch {
+    $.ui.toast('Could not refresh the readings')
   }
 }
 
@@ -402,6 +430,14 @@ export const register: Register = on => {
             )}
           </Text>
         </Box>
+        <Button
+          key="refresh"
+          label={REFRESH_ICON}
+          dimColor
+          onPress={() => {
+            void refreshReadings($)
+          }}
+        />
         {/* The desktop draws a dismiss Button as a close control. It hides the
             band in this chat only: the state is the session's, so a new chat
             shows it again. */}
