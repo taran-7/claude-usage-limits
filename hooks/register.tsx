@@ -24,6 +24,7 @@ const DARK_RED = '#b91c1c'
 const SEPARATOR = ' · '
 const COMPACT_ICON = '🗜️'
 const CLOSE_ICON = '×'
+const COMMAND = 'limits'
 
 type Segment = {
   key: string
@@ -189,10 +190,24 @@ const compactNow = async ($: EngineInterface) => {
   }
 }
 
+// A refused name must not stop the timer and the readings that follow.
+const registerCommand = async ($: EngineInterface) => {
+  try {
+    await $.command.register({
+      name: COMMAND,
+      description: 'Показати або сховати смугу з контекстом і лімітами',
+      immediate: true,
+    })
+  } catch {
+    $.ui.toast(`/${COMMAND} не вдалося зареєструвати`)
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     $.clock.every(TICK_MS, () => update($, tick, n => n + 1))
     await update($, compacting, () => false)
+    await registerCommand($)
 
     const usage = await $.session.usage()
     await update($, limits, () => toLimits(usage.rateLimits))
@@ -200,6 +215,20 @@ export const register: Register = on => {
 
     return next(e)
   })
+
+  // The same switch the close button throws, so `/limits` brings a closed band
+  // back and hides an open one.
+  on('command.run', { command: COMMAND }, async $ => {
+    const isNowHidden = !(await read($, hidden))
+
+    await update($, hidden, () => isNowHidden)
+
+    return {
+      text: isNowHidden
+        ? 'Смугу з лімітами сховано. /limits повертає її.'
+        : 'Смугу з лімітами показано.',
+    }
+  }).catch(() => ({ text: 'Не вдалося перемкнути смугу з лімітами.' }))
 
   on('session.measure', async ($, e, next) => {
     await update($, limits, () => toLimits(e.rateLimits))
