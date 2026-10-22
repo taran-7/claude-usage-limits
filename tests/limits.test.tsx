@@ -591,6 +591,62 @@ test('the close button is there with the limits alone, and the compact button is
   await ui.unmount()
 })
 
+const EDITOR_YELLOW = '#ca8a04'
+
+test('in the editor the band is one small line without the labels', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 23.4, resetsAt: isoAfter(2 * HOUR_MS + 14 * MINUTE_MS) },
+        { kind: 'seven_day', percentUsed: 41, resetsAt: isoAfter(3 * DAY_MS + 5 * HOUR_MS) },
+      ],
+      { window: 200_000, tokens: 68_000, percent: 34 },
+    ),
+  )
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+
+  expect((await ui.find({ type: 'Text', text: /34%/ }))?.text).toBe('███░░░░░ 34% 68k/200k · ██░░░░░░ 23% 2h 14m · ███░░░░░ 41% 3d 5h')
+
+  // One row that does not wrap, its readings free to shrink, in the caption size.
+  const [row, , readings] = await ui.findAll({ type: 'Box' })
+  expect(row?.props.flexWrap).toBe('nowrap')
+  expect(readings?.props.minWidth).toBe(0)
+  expect((await ui.find({ type: 'Text', text: /34%/ }))?.props.size).toBe('caption')
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
+  expect((await ui.find({ type: 'Button', text: /×/ }))?.props.role).toBe('dismiss')
+  await ui.unmount()
+})
+
+test('in the editor the warning colour is given outright, as its theme leaves it unset', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 50, resetsAt: isoAfter(HOUR_MS) },
+        { kind: 'seven_day', percentUsed: 75, resetsAt: isoAfter(DAY_MS) },
+      ],
+      { window: 200_000, tokens: 190_000, percent: 95 },
+    ),
+  )
+
+  const editor = await $.ui.mount({ ...BAND, surface: 'vscode' })
+
+  expect((await editor.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
+  expect((await editor.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe('success')
+  expect((await editor.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe(EDITOR_YELLOW)
+  // The bar takes the colour with the percent.
+  expect((await editor.find({ type: 'Text', text: /^██████░░\s*$/ }))?.props.color).toBe(EDITOR_YELLOW)
+  await editor.unmount()
+
+  const desktop = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect((await desktop.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe('warning')
+  expect((await desktop.find({ type: 'Text', text: /Session/ }))?.props.size).toBeUndefined()
+  await desktop.unmount()
+})
+
 test('the refresh button sits left of the close button', async ($, on) => {
   setUp(on)
   await measureContext($)
