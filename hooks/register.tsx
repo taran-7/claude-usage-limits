@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
+  SessionAppendMessage,
   SessionContextUsage,
   SessionRateLimit,
 } from 'claude-code'
@@ -153,27 +154,54 @@ const toSegments = (
   return segments
 }
 
-// What the context is worth once a compaction is done. The engine reports a
-// new figure only with the next response, so until then the local estimate of
-// the live transcript is the best reading there is. The compaction's own count
-// stands in where that estimate is not to be had.
-const refreshAfterCompaction = async (
-  $: EngineInterface,
-  tokensAfter: number | undefined,
-) => {
+// What the context is worth once a compaction is done. The engine reports its
+// own figure only with the next response, so until then its estimate of the
+// live transcript is the best reading there is.
+const refreshContext = async ($: EngineInterface) => {
   try {
     const { context: usage } = await $.session.usage({ breakdown: 'summary' })
-    const tokens = usage.breakdown?.totalTokens ?? tokensAfter
+    const fill =
+      toContextFill(usage) ??
+      toContextFill({ window: usage.window, tokens: usage.breakdown?.totalTokens })
 
-    if (tokens === undefined) return
-
-    await update($, context, fill =>
-      toContextFill({ window: fill?.window ?? usage.window, tokens }),
-    )
+    if (fill !== null) {
+      await update($, context, () => fill)
+    }
   } catch {
     // The bar is a convenience: the next response reports the real figure.
   }
 }
+
+// Straight after a compaction the estimate has not counted the new
+// conversation in full yet, and it settles within a second or two.
+const refreshSoon = ($: EngineInterface) => {
+  $.clock.after(COMPACTION_SETTLE_MS, () => {
+    void refreshContext($)
+  })
+}
+
+// A compaction that nothing announced still shows: the engine has no figure
+// for the context until the next response, while the bar still has the old one.
+const catchUpWithCompaction = async ($: EngineInterface) => {
+  if ((await read($, context)) === null) return
+
+  try {
+    const { context: usage } = await $.session.usage()
+
+    if (usage.tokens === undefined) {
+      await refreshContext($)
+    }
+  } catch {
+    // The next tick tries again.
+  }
+}
+
+// What a finished /compact leaves in the conversation: the command and its
+// output, as the engine wraps them.
+const COMPACT_ROW = /<command-name>\/?compact<\/command-name>|<local-command-stdout>\s*Compacted/
+
+const isCompactRow = ({ content }: SessionAppendMessage): boolean =>
+  content.some(block => block.type === 'text' && COMPACT_ROW.test(String(block.text)))
 
 // Runs the real `/compact`, so it shows in the chat as if it were typed. It is
 // queued until the session is idle, so a press during a turn is not lost.
@@ -182,6 +210,7 @@ const compactNow = async ($: EngineInterface) => {
 
   try {
     await $.command.run({ command: 'compact' })
+    refreshSoon($)
   } catch {
     $.ui.toast('Compact не вдалося запустити')
   } finally {
@@ -204,7 +233,11 @@ const registerCommand = async ($: EngineInterface) => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    $.clock.every(TICK_MS, () => update($, tick, n => n + 1))
+    $.clock.every(TICK_MS, () => {
+      void catchUpWithCompaction($)
+
+      return update($, tick, n => n + 1)
+    })
     await update($, compacting, () => false)
     await registerCommand($)
 
@@ -229,15 +262,26 @@ export const register: Register = on => {
     }
   }).catch(() => ({ text: 'Не вдалося перемкнути смугу з лімітами.' }))
 
-  // Every compaction leaves the context smaller: the button's, a typed
-  // /compact and the automatic one alike. A subagent's own does not count.
+  // Every compaction leaves the context smaller. A subagent's own does not
+  // count. Not every surface announces one here: the desktop's /compact does
+  // not, and the rows it leaves in the conversation stand in for it below.
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
 
     if (e.trigger !== 'precompute' && e.agentId === undefined && result.skip === undefined) {
-      $.clock.after(COMPACTION_SETTLE_MS, () => {
-        void refreshAfterCompaction($, result.tokensAfter)
-      })
+      refreshSoon($)
+    }
+
+    return result
+  }).catch(($, e, next) => next(e))
+
+  // The command's rows come once it is done, so a typed /compact is caught as
+  // well as the button's.
+  on('session.append', { door: 'command' }, async ($, e, next) => {
+    const result = await next(e)
+
+    if (e.agentId === undefined && isCompactRow(e.message)) {
+      refreshSoon($)
     }
 
     return result

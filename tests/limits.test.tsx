@@ -55,6 +55,9 @@ let holdCommand = false
 let releaseCommand: () => void = () => {}
 // What the engine estimates for the live transcript; 0 for no estimate.
 let estimatedTokens = 0
+// The engine's own figure for the context: absent after a compaction, until the
+// next response.
+let engineTokens: number | undefined
 
 // What the engine does beneath the plugin: it echoes a measurement, runs a
 // command, compacts, estimates the live context and draws an empty band of its
@@ -70,6 +73,7 @@ const setUp = (on: On, now = NOW) => {
   runCommand = () => ({ text: 'ok' })
   holdCommand = false
   estimatedTokens = 0
+  engineTokens = undefined
 
   on('command.run', async (_$, e) => {
     commands.push(e.command)
@@ -91,10 +95,11 @@ const setUp = (on: On, now = NOW) => {
     value: {
       startedAt: 0,
       rateLimits: [],
-      context:
-        estimatedTokens === 0
-          ? { window: 200_000 }
-          : { window: 200_000, breakdown: { totalTokens: estimatedTokens } },
+      context: {
+        window: 200_000,
+        ...(engineTokens === undefined ? {} : { tokens: engineTokens, percent: engineTokens / 2_000 }),
+        ...(estimatedTokens === 0 ? {} : { breakdown: { totalTokens: estimatedTokens } }),
+      },
     },
   }) as never)
   on('ui.toast', (_$, e) => {
@@ -299,7 +304,7 @@ test('a compaction refreshes the context from the live transcript', async ($, on
   await ui.unmount()
 })
 
-test("without an estimate the compaction's own count stands in", async ($, on) => {
+test('without an estimate a compaction leaves the context as it was', async ($, on) => {
   const clock = setUp(on)
   await measureContext($)
 
@@ -307,7 +312,110 @@ test("without an estimate the compaction's own count stands in", async ($, on) =
   await $.session.compact({ trigger: 'auto', messages: [SUMMARY] })
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Контекст ░░░░░░░░ 6% 12k/200k')
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  await ui.unmount()
+})
+
+test("after the button's /compact the context follows the new conversation", async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'compact' })
+  await clock.advance(1_500)
+
+  expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+  await ui.unmount()
+})
+
+const commandRow = (text: string, over: { door?: 'command' | 'note'; agentId?: string } = {}) => ({
+  door: over.door ?? ('command' as const),
+  origin: { kind: 'engine' as const },
+  uuid: 'row',
+  agentId: over.agentId,
+  message: { type: 'user' as const, content: [{ type: 'text', text }] },
+})
+
+const COMPACT_COMMAND = '<command-name>/compact</command-name>'
+const COMPACT_OUTPUT = '<local-command-stdout>Compacted </local-command-stdout>'
+
+test('the rows a typed /compact leaves refresh the context', async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  for (const text of [COMPACT_COMMAND, COMPACT_OUTPUT]) {
+    await $.session.measure(measurement([], { window: 200_000, tokens: 68_000, percent: 34 }))
+    await $.session.append(commandRow(text))
+    expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+
+    await clock.advance(1_500)
+    expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+  }
+
+  await ui.unmount()
+})
+
+test("another command's rows, a subagent's and a note leave the context as it was", async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  await $.session.append(commandRow('<command-name>/limits</command-name>'))
+  await $.session.append(commandRow(COMPACT_COMMAND, { agentId: 'sub' }))
+  await $.session.append(commandRow(COMPACT_COMMAND, { door: 'note' }))
+  await clock.advance(1_500)
+
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  await ui.unmount()
+})
+
+test('a compaction nothing announced is caught on the next tick', async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+
+  await clock.advance(30_000)
+
+  expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+  await ui.unmount()
+})
+
+test('the tick leaves a context the engine still reports', async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+  engineTokens = 68_000
+
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await clock.advance(30_000)
+
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  await ui.unmount()
+})
+
+test('the tick does not invent a context before the engine has reported one', async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await clock.advance(30_000)
+
+  expect(await contextOf(ui)).toBeUndefined()
   await ui.unmount()
 })
 
