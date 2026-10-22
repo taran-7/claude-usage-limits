@@ -2,7 +2,6 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
-  SessionCompactResult,
   SessionContextUsage,
   SessionRateLimit,
 } from 'claude-code'
@@ -25,6 +24,7 @@ const SEPARATOR = ' · '
 const COMPACT_ICON = '🗜️'
 const CLOSE_ICON = '×'
 const COMMAND = 'limits'
+const COMPACTION_SETTLE_MS = 1_500
 
 type Segment = {
   key: string
@@ -153,38 +153,37 @@ const toSegments = (
   return segments
 }
 
-const describeCompaction = (result: SessionCompactResult): string => {
-  if (result.skip !== undefined) return `Compact скасовано: ${result.skip}`
-  if (result.tokensBefore === undefined || result.tokensAfter === undefined) {
-    return 'Контекст стиснуто'
-  }
+// What the context is worth once a compaction is done. The engine reports a
+// new figure only with the next response, so until then the local estimate of
+// the live transcript is the best reading there is. The compaction's own count
+// stands in where that estimate is not to be had.
+const refreshAfterCompaction = async (
+  $: EngineInterface,
+  tokensAfter: number | undefined,
+) => {
+  try {
+    const { context: usage } = await $.session.usage({ breakdown: 'summary' })
+    const tokens = usage.breakdown?.totalTokens ?? tokensAfter
 
-  return `Контекст стиснуто: ${formatTokens(result.tokensBefore)} → ${formatTokens(result.tokensAfter)}`
-}
+    if (tokens === undefined) return
 
-const showCompacted = async ($: EngineInterface, result: SessionCompactResult) => {
-  if (result.skip === undefined && result.tokensAfter !== undefined) {
-    const tokens = result.tokensAfter
-
-    // The engine measures again after the next response; until then the
-    // compaction's own figure is the best reading there is.
     await update($, context, fill =>
-      fill === null ? null : toContextFill({ window: fill.window, tokens }),
+      toContextFill({ window: fill?.window ?? usage.window, tokens }),
     )
+  } catch {
+    // The bar is a convenience: the next response reports the real figure.
   }
-
-  $.ui.toast(describeCompaction(result))
 }
 
-// The same call `/compact` makes. It rejects while a turn runs.
+// Runs the real `/compact`, so it shows in the chat as if it were typed. It is
+// queued until the session is idle, so a press during a turn is not lost.
 const compactNow = async ($: EngineInterface) => {
   await update($, compacting, () => true)
-  $.ui.toast('Стискаю контекст…')
 
   try {
-    await showCompacted($, await $.session.compact())
+    await $.command.run({ command: 'compact' })
   } catch {
-    $.ui.toast('Compact неможливий, поки триває відповідь')
+    $.ui.toast('Compact не вдалося запустити')
   } finally {
     await update($, compacting, () => false)
   }
@@ -230,9 +229,25 @@ export const register: Register = on => {
     }
   }).catch(() => ({ text: 'Не вдалося перемкнути смугу з лімітами.' }))
 
+  // Every compaction leaves the context smaller: the button's, a typed
+  // /compact and the automatic one alike. A subagent's own does not count.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+
+    if (e.trigger !== 'precompute' && e.agentId === undefined && result.skip === undefined) {
+      $.clock.after(COMPACTION_SETTLE_MS, () => {
+        void refreshAfterCompaction($, result.tokensAfter)
+      })
+    }
+
+    return result
+  }).catch(($, e, next) => next(e))
+
   on('session.measure', async ($, e, next) => {
     await update($, limits, () => toLimits(e.rateLimits))
-    await update($, context, () => toContextFill(e.context))
+    // Just after a compaction the engine has no context figure until the next
+    // response, and the last estimate is kept rather than blanked.
+    await update($, context, fill => toContextFill(e.context) ?? fill)
 
     return next(e)
   })

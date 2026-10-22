@@ -29,28 +29,74 @@ const measurement = (rateLimits: RateLimit[], context: Context = { window: 200_0
   changed: ['rateLimits' as const, 'context' as const],
 })
 
-// What the engine does beneath the plugin: it echoes a measurement and draws
-// an empty band of its own when no plugin has anything to show.
+const compactions: string[] = []
+const commands: string[] = []
+const registered: string[] = []
+const toasts: string[] = []
+const DARK_RED = '#b91c1c'
+
+const LIMITS_COMMAND = {
+  command: 'limits',
+  args: '',
+  origin: { kind: 'composer' as const },
+  presentation: { isFullscreen: false, columns: 100 },
+}
+const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
+
+const DEFAULT_COMPACTION = (): SessionCompactResult => ({
+  messages: [SUMMARY],
+  tokensBefore: 68_000,
+  tokensAfter: 12_000,
+})
+
+let compact: () => SessionCompactResult = DEFAULT_COMPACTION
+let runCommand: () => { text?: string } = () => ({ text: 'ok' })
+let holdCommand = false
+let releaseCommand: () => void = () => {}
+// What the engine estimates for the live transcript; 0 for no estimate.
+let estimatedTokens = 0
+
+// What the engine does beneath the plugin: it echoes a measurement, runs a
+// command, compacts, estimates the live context and draws an empty band of its
+// own when no plugin has anything to show.
 const setUp = (on: On, now = NOW) => {
   const clock = mock.clock(on, { now })
 
   compactions.length = 0
+  commands.length = 0
   registered.length = 0
   toasts.length = 0
   compact = DEFAULT_COMPACTION
-  holdCompaction = false
+  runCommand = () => ({ text: 'ok' })
+  holdCommand = false
+  estimatedTokens = 0
 
-  on('session.compact', async () => {
-    compactions.push('called')
+  on('command.run', async (_$, e) => {
+    commands.push(e.command)
 
-    if (holdCompaction) {
+    if (holdCommand) {
       await new Promise<void>(resolve => {
-        releaseCompaction = resolve
+        releaseCommand = resolve
       })
     }
 
+    return runCommand()
+  })
+  on('session.compact', () => {
+    compactions.push('called')
+
     return compact()
   })
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      rateLimits: [],
+      context:
+        estimatedTokens === 0
+          ? { window: 200_000 }
+          : { window: 200_000, breakdown: { totalTokens: estimatedTokens } },
+    },
+  }) as never)
   on('ui.toast', (_$, e) => {
     toasts.push(e.text)
 
@@ -78,30 +124,6 @@ type Finder = {
 
 const contextOf = async (ui: Finder) =>
   (await ui.find({ type: 'Text', text: /Контекст/ }))?.text
-
-const DARK_RED = '#b91c1c'
-
-const compactions: string[] = []
-const registered: string[] = []
-
-const LIMITS_COMMAND = {
-  command: 'limits',
-  args: '',
-  origin: { kind: 'composer' as const },
-  presentation: { isFullscreen: false, columns: 100 },
-}
-const toasts: string[] = []
-const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
-
-const DEFAULT_COMPACTION = (): SessionCompactResult => ({
-  messages: [SUMMARY],
-  tokensBefore: 68_000,
-  tokensAfter: 12_000,
-})
-
-let compact: () => SessionCompactResult = DEFAULT_COMPACTION
-let holdCompaction = false
-let releaseCompaction: () => void = () => {}
 
 const isoAfter = (ms: number) => new Date(NOW + ms).toISOString()
 
@@ -247,59 +269,91 @@ test('the context follows each measurement', async ($, on) => {
 const measureContext = ($: Engine) =>
   $.session.measure(measurement([], { window: 200_000, tokens: 68_000, percent: 34 }))
 
-test('pressing the context compacts the conversation and shows the size after it', async ($, on) => {
+test('pressing the button runs /compact as a command', async ($, on) => {
   setUp(on)
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await ui.press({ key: 'compact' })
 
-  expect(compactions).toEqual(['called'])
-  expect(await contextOf(ui)).toBe(
-    'Контекст ░░░░░░░░ 6% 12k/200k',
-  )
+  expect(commands).toEqual(['compact'])
+  expect(toasts).toEqual([])
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
-  expect(toasts).toEqual(['Стискаю контекст…', 'Контекст стиснуто: 68k → 12k'])
   await ui.unmount()
 })
 
-test('a vetoed compaction leaves the context as it was', async ($, on) => {
-  setUp(on)
-  compact = () => ({ skip: 'off' })
+test('a compaction refreshes the context from the live transcript', async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  await ui.press({ key: 'compact' })
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
 
   expect(compactions).toEqual(['called'])
-  expect(await contextOf(ui)).toBe(
-    'Контекст ███░░░░░ 34% 68k/200k',
-  )
-  expect(toasts).toEqual(['Стискаю контекст…', 'Compact скасовано: off'])
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+
+  await clock.advance(1_500)
+
+  expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
-test('a compaction that fails leaves the context and the button as they were', async ($, on) => {
+test("without an estimate the compaction's own count stands in", async ($, on) => {
+  const clock = setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await $.session.compact({ trigger: 'auto', messages: [SUMMARY] })
+  await clock.advance(1_500)
+
+  expect(await contextOf(ui)).toBe('Контекст ░░░░░░░░ 6% 12k/200k')
+  await ui.unmount()
+})
+
+test('a vetoed, a precomputed and a subagent compaction leave the context as it was', async ($, on) => {
+  const clock = setUp(on)
+  estimatedTokens = 24_000
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const before = 'Контекст ███░░░░░ 34% 68k/200k'
+
+  compact = () => ({ skip: 'off' })
+  await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
+  await clock.advance(1_500)
+  expect(await contextOf(ui)).toBe(before)
+
+  compact = DEFAULT_COMPACTION
+  await $.session.compact({ trigger: 'precompute', messages: [SUMMARY] })
+  await clock.advance(1_500)
+  expect(await contextOf(ui)).toBe(before)
+
+  await $.session.compact({ trigger: 'auto', messages: [SUMMARY], agentId: 'sub' })
+  await clock.advance(1_500)
+  expect(await contextOf(ui)).toBe(before)
+  await ui.unmount()
+})
+
+test('a /compact that cannot run leaves the context and the button as they were', async ($, on) => {
   setUp(on)
-  compact = () => {
-    throw new Error('a turn is running')
+  runCommand = () => {
+    throw new Error('refused')
   }
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await ui.press({ key: 'compact' })
 
-  expect(await contextOf(ui)).toBe(
-    'Контекст ███░░░░░ 34% 68k/200k',
-  )
+  expect(toasts).toEqual(['Compact не вдалося запустити'])
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
-  expect(toasts).toEqual(['Стискаю контекст…', 'Compact неможливий, поки триває відповідь'])
   await ui.unmount()
 })
 
-test('while a compaction runs the button gives way to an hourglass', async ($, on) => {
+test('while /compact runs the button gives way to an hourglass', async ($, on) => {
   const clock = setUp(on)
-  holdCompaction = true
+  holdCommand = true
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
@@ -310,11 +364,22 @@ test('while a compaction runs the button gives way to an hourglass', async ($, o
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
   expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
 
-  releaseCompaction()
+  releaseCommand()
   await pressed
 
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
   expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a reading without a context figure keeps the last one', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await $.session.measure(measurement([], { window: 200_000 }))
+
+  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
