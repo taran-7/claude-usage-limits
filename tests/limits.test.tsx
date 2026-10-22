@@ -58,6 +58,9 @@ let estimatedTokens = 0
 // The engine's own figure for the context: absent after a compaction, until the
 // next response.
 let engineTokens: number | undefined
+// The limits the engine last had from a response, and whether it refuses to say.
+let engineRates: RateLimit[] = []
+let usageFails = false
 
 // What the engine does beneath the plugin: it echoes a measurement, runs a
 // command, compacts, estimates the live context and draws an empty band of its
@@ -74,6 +77,8 @@ const setUp = (on: On, now = NOW) => {
   holdCommand = false
   estimatedTokens = 0
   engineTokens = undefined
+  engineRates = []
+  usageFails = false
 
   on('command.run', async (_$, e) => {
     commands.push(e.command)
@@ -91,17 +96,21 @@ const setUp = (on: On, now = NOW) => {
 
     return compact()
   })
-  on('session.usage', () => ({
+  on('session.usage', () => {
+    if (usageFails) throw new Error('no usage')
+
+    return {
     value: {
       startedAt: 0,
-      rateLimits: [],
+      rateLimits: engineRates,
       context: {
         window: 200_000,
         ...(engineTokens === undefined ? {} : { tokens: engineTokens, percent: engineTokens / 2_000 }),
         ...(estimatedTokens === 0 ? {} : { breakdown: { totalTokens: estimatedTokens } }),
       },
     },
-  }) as never)
+  } as never
+  })
   on('ui.toast', (_$, e) => {
     toasts.push(e.text)
 
@@ -577,7 +586,98 @@ test('the close button is there with the limits alone, and the compact button is
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   expect(await ui.findAll({ type: 'Button', text: /×/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /↻/ })).toHaveLength(1)
   expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(0)
+  await ui.unmount()
+})
+
+test('the refresh button sits left of the close button', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const buttons = await ui.findAll({ type: 'Button' })
+
+  expect(buttons.map(button => button.props.label)).toEqual(['♻️', '↻', '×'])
+  await ui.unmount()
+})
+
+test('the refresh button brings the context, the session and the week up to date', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 10, resetsAt: isoAfter(4 * HOUR_MS) },
+        { kind: 'seven_day', percentUsed: 20, resetsAt: isoAfter(2 * DAY_MS) },
+      ],
+      { window: 200_000, tokens: 20_000, percent: 10 },
+    ),
+  )
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await contextOf(ui)).toBe(
+    'Context █░░░░░░░ 10% 20k/200k · Session █░░░░░░░ 10% 4h 0m · Week ██░░░░░░ 20% 2d 0h',
+  )
+
+  engineTokens = 100_000
+  engineRates = [
+    { kind: 'five_hour', percentUsed: 55, resetsAt: isoAfter(3 * HOUR_MS) },
+    { kind: 'seven_day', percentUsed: 60, resetsAt: isoAfter(DAY_MS) },
+  ]
+  await ui.press({ key: 'refresh' })
+
+  expect(await contextOf(ui)).toBe(
+    'Context ████░░░░ 50% 100k/200k · Session ████░░░░ 55% 3h 0m · Week █████░░░ 60% 1d 0h',
+  )
+  expect(toasts).toEqual(['Readings refreshed'])
+  await ui.unmount()
+})
+
+test('the refresh button falls back on the estimate when the engine has no context figure', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  estimatedTokens = 40_000
+  await ui.press({ key: 'refresh' })
+
+  expect(await contextOf(ui)).toBe('Context ██░░░░░░ 20% 40k/200k')
+  await ui.unmount()
+})
+
+test('a window the engine has no reading for keeps the one on the row', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 10, resetsAt: isoAfter(4 * HOUR_MS) },
+        { kind: 'seven_day', percentUsed: 20, resetsAt: isoAfter(2 * DAY_MS) },
+      ],
+      { window: 200_000, tokens: 20_000, percent: 10 },
+    ),
+  )
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  engineTokens = 20_000
+  engineRates = [{ kind: 'five_hour', percentUsed: 30, resetsAt: isoAfter(4 * HOUR_MS) }]
+  await ui.press({ key: 'refresh' })
+
+  expect(await contextOf(ui)).toBe(
+    'Context █░░░░░░░ 10% 20k/200k · Session ██░░░░░░ 30% 4h 0m · Week ██░░░░░░ 20% 2d 0h',
+  )
+  await ui.unmount()
+})
+
+test('a refresh the engine cannot answer leaves the row as it was and says so', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  usageFails = true
+  await ui.press({ key: 'refresh' })
+
+  expect(toasts).toEqual(['Could not refresh the readings'])
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
