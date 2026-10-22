@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type {
   EngineInterface,
   Register,
+  RenderChildren,
   SessionAppendMessage,
   SessionContextUsage,
   SessionRateLimit,
@@ -22,9 +23,18 @@ const BAR_WIDTH = 8
 const CONTEXT_GREEN_UNTIL = 40
 const CONTEXT_YELLOW_UNTIL = 60
 const DARK_RED = '#b91c1c'
-// The editor's theme leaves its `warning` colour unset, so the text comes out
-// white there: yellow is given outright.
+// The editor's theme leaves its `warning` colour unset, and a drawing cannot
+// use a theme colour at all, so the editor gets its colours given outright.
+const EDITOR_GREEN = '#25E712'
 const EDITOR_YELLOW = '#ca8a04'
+const EDITOR_RED = '#C1121C'
+const RING_TRACK = 'rgba(140, 140, 140, 0.35)'
+const RING_SIZE = 16
+const RING_RADIUS = 6
+const RING_STROKE = 2.5
+// Below this many columns the rings and the text do not fit one line, and the
+// editor draws the readings as text alone. 0 means the width is not known yet.
+const EDITOR_RINGS_FROM = 60
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
 const REFRESH_ICON = '↻'
@@ -127,6 +137,32 @@ const pickContextColor = (percent: number): string => {
   if (shown <= CONTEXT_GREEN_UNTIL) return 'success'
   if (shown <= CONTEXT_YELLOW_UNTIL) return 'warning'
   return DARK_RED
+}
+
+const editorColor = (color: string): string => {
+  if (color === 'success') return EDITOR_GREEN
+  if (color === 'warning') return EDITOR_YELLOW
+  if (color === 'error' || color === DARK_RED) return EDITOR_RED
+  return color
+}
+
+// A ring that fills clockwise from the top, as a drawing: the editor's font
+// does not keep the blocks of a text bar to one width.
+const drawRing = (percent: number, color: string): string => {
+  const circumference = 2 * Math.PI * RING_RADIUS
+  const filled = (Math.min(Math.max(percent, 0), 100) * circumference) / 100
+  const centre = RING_SIZE / 2
+  const circle = (stroke: string, extra = '') =>
+    `<circle cx="${centre}" cy="${centre}" r="${RING_RADIUS}" fill="none" stroke="${stroke}" stroke-width="${RING_STROKE}"${extra}/>`
+  const arc =
+    filled > 0
+      ? circle(
+          color,
+          ` stroke-dasharray="${filled.toFixed(2)} ${circumference.toFixed(2)}" stroke-linecap="round" transform="rotate(-90 ${centre} ${centre})"`,
+        )
+      : ''
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${RING_SIZE}" height="${RING_SIZE}" viewBox="0 0 ${RING_SIZE} ${RING_SIZE}">${circle(RING_TRACK)}${arc}</svg>`
 }
 
 const toSegments = (
@@ -354,23 +390,29 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const hasContext = segments.some(segment => segment.key === 'context')
 
-    // In the editor's panel the band is one small line: the labels are left
-    // out and the text is set in the caption size.
+    // In the editor's panel the band is one small line in the caption size, with
+    // no labels. The readings are rings beside the text when the band is wide
+    // enough, else the text alone.
     const isEditor = e.surface === 'vscode'
+    const Svg = e.surface === 'vscode' ? $.ui.resolve(e).Svg : null
+    const columns = e.props.bodyColumns
+    const hasRings = Svg !== null && (columns === 0 || columns >= EDITOR_RINGS_FROM)
     // The editor wraps a Text unless it says otherwise, and the parts inside the
     // one that truncates wrap on their own, so each says it.
     const textProps = isEditor
       ? { size: 'caption' as const, wrap: 'truncate-end' as const }
       : {}
-    const tint = (color: string) => (isEditor && color === 'warning' ? EDITOR_YELLOW : color)
+    const tint = (color: string) => (isEditor ? editorColor(color) : color)
 
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
       <Text key={key} {...textProps}>
         {isEditor ? null : `${label} `}
-        <Text color={tint(color)} mono {...textProps}>
-          {`${drawBar(percent)} `}
-        </Text>
-        <Text color={tint(color)} mono {...textProps}>
+        {isEditor ? null : (
+          <Text color={color} mono>
+            {`${drawBar(percent)} `}
+          </Text>
+        )}
+        <Text color={tint(color)} mono={!isEditor} {...textProps}>
           {`${Math.round(percent)}%`}
         </Text>
         {detail === '' ? null : (
@@ -381,11 +423,39 @@ export const register: Register = on => {
       </Text>
     )
 
+    const drawRingSegment = ({ key, label, percent, color, detail }: Segment) =>
+      Svg === null ? null : (
+        <Box key={key} flexDirection="row" alignItems="center" columnGap="sm">
+          <Svg
+            key="ring"
+            source={drawRing(percent, tint(color))}
+            alt={`${label} ${Math.round(percent)}%`}
+            width={RING_SIZE}
+            height={RING_SIZE}
+          />
+          <Text wrap="truncate-end" {...textProps}>
+            <Text color={tint(color)} {...textProps}>
+              {`${Math.round(percent)}%`}
+            </Text>
+            {detail === '' ? null : (
+              <Text dimColor {...textProps}>
+                {` ${detail}`}
+              </Text>
+            )}
+          </Text>
+        </Box>
+      )
+
     const separator = (index: number) => (
       <Text key={`separator-${index}`} dimColor {...textProps}>
         {SEPARATOR}
       </Text>
     )
+
+    const joined = (draw: (segment: Segment) => RenderChildren) =>
+      segments.flatMap((segment, index) =>
+        index === 0 ? [draw(segment)] : [separator(index), draw(segment)],
+      )
 
     // The icon stands for the context beside it, which stays plain coloured
     // text: the desktop draws a Button's children without their colours.
@@ -425,14 +495,16 @@ export const register: Register = on => {
           flexShrink={1}
           {...(isEditor ? { minWidth: 0 } : {})}
         >
-          {/* One Text, so the segments keep a single row on every surface. */}
-          <Text wrap="truncate-end" {...textProps}>
-            {segments.flatMap((segment, index) =>
-              index === 0
-                ? [drawSegment(segment)]
-                : [separator(index), drawSegment(segment)],
-            )}
-          </Text>
+          {hasRings ? (
+            <Box flexDirection="row" alignItems="center" columnGap="sm" flexWrap="nowrap" overflow="hidden">
+              {joined(drawRingSegment)}
+            </Box>
+          ) : (
+            // One Text, so the segments keep a single row on every surface.
+            <Text wrap="truncate-end" {...textProps}>
+              {joined(drawSegment)}
+            </Text>
+          )}
         </Box>
         <Button
           key="refresh"

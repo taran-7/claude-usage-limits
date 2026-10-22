@@ -591,9 +591,14 @@ test('the close button is there with the limits alone, and the compact button is
   await ui.unmount()
 })
 
+const EDITOR_GREEN = '#25E712'
 const EDITOR_YELLOW = '#ca8a04'
+const EDITOR_RED = '#C1121C'
 
-test('in the editor the band is one small line without the labels', async ($, on) => {
+const editorBand = (columns: number) =>
+  ({ ...BAND, surface: 'vscode', props: { ...BAND.props, bodyColumns: columns } }) as const
+
+test('in the editor the band is one small line of rings and text without the labels', async ($, on) => {
   setUp(on)
   await $.session.measure(
     measurement(
@@ -605,15 +610,23 @@ test('in the editor the band is one small line without the labels', async ($, on
     ),
   )
 
-  const ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
+  const ui = await $.ui.mount(editorBand(100))
 
-  expect((await ui.find({ type: 'Text', text: /34%/ }))?.text).toBe('███░░░░░ 34% 68k/200k · ██░░░░░░ 23% 2h 14m · ███░░░░░ 41% 3d 5h')
+  const rings = await ui.findAll({ type: 'Svg' })
+  expect(rings.map(ring => ring.props.alt)).toEqual(['Context 34%', 'Session 23%', 'Week 41%'])
+  // The first ring: a track and an arc of 34% of the circumference (37.70).
+  expect(rings[0]?.props.source).toContain('stroke-dasharray="12.82 37.70"')
+  expect(rings[0]?.props.source).toContain(`stroke="${EDITOR_GREEN}"`)
+  expect((await ui.find({ type: 'Text', text: /^34%/ }))?.text).toBe('34% 68k/200k')
+  expect((await ui.find({ type: 'Text', text: /^23%/ }))?.text).toBe('23% 2h 14m')
+  expect((await ui.find({ type: 'Text', text: /^41%/ }))?.text).toBe('41% 3d 5h')
+  expect(await ui.find({ type: 'Text', text: /Context|Session|Week/ })).toBeUndefined()
 
   // One row that does not wrap, its readings free to shrink, in the caption size.
   const [row, , readings] = await ui.findAll({ type: 'Box' })
   expect(row?.props.flexWrap).toBe('nowrap')
   expect(readings?.props.minWidth).toBe(0)
-  expect((await ui.find({ type: 'Text', text: /34%/ }))?.props.size).toBe('caption')
+  expect((await ui.find({ type: 'Text', text: /^34%/ }))?.props.size).toBe('caption')
   // Every part says it truncates, as the editor wraps the ones that do not.
   const texts = await ui.findAll({ type: 'Text' })
   expect(texts.length).toBeGreaterThan(1)
@@ -623,7 +636,35 @@ test('in the editor the band is one small line without the labels', async ($, on
   await ui.unmount()
 })
 
-test('in the editor the warning colour is given outright, as its theme leaves it unset', async ($, on) => {
+test('a band too narrow for the rings is drawn as text alone, and one of unknown width as rings', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 23.4, resetsAt: isoAfter(2 * HOUR_MS + 14 * MINUTE_MS) },
+        { kind: 'seven_day', percentUsed: 41, resetsAt: isoAfter(3 * DAY_MS + 5 * HOUR_MS) },
+      ],
+      { window: 200_000, tokens: 68_000, percent: 34 },
+    ),
+  )
+
+  const narrow = await $.ui.mount(editorBand(59))
+
+  expect(await narrow.findAll({ type: 'Svg' })).toHaveLength(0)
+  expect((await narrow.find({ type: 'Text', text: /34%/ }))?.text).toBe(
+    '34% 68k/200k · 23% 2h 14m · 41% 3d 5h',
+  )
+  await narrow.unmount()
+
+  for (const columns of [60, 0]) {
+    const wide = await $.ui.mount(editorBand(columns))
+
+    expect(await wide.findAll({ type: 'Svg' })).toHaveLength(3)
+    await wide.unmount()
+  }
+})
+
+test('in the editor the colours are given outright, as its theme leaves some unset', async ($, on) => {
   setUp(on)
   await $.session.measure(
     measurement(
@@ -635,20 +676,52 @@ test('in the editor the warning colour is given outright, as its theme leaves it
     ),
   )
 
-  const editor = await $.ui.mount({ ...BAND, surface: 'vscode' })
+  for (const columns of [100, 40]) {
+    const editor = await $.ui.mount(editorBand(columns))
 
-  expect((await editor.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
-  expect((await editor.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe('success')
-  expect((await editor.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe(EDITOR_YELLOW)
-  // The bar takes the colour with the percent.
-  expect((await editor.find({ type: 'Text', text: /^██████░░\s*$/ }))?.props.color).toBe(EDITOR_YELLOW)
-  await editor.unmount()
+    expect((await editor.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(EDITOR_RED)
+    expect((await editor.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe(EDITOR_GREEN)
+    expect((await editor.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe(EDITOR_YELLOW)
+    await editor.unmount()
+  }
 
+  // The rings take the same colours.
+  const ringed = await $.ui.mount(editorBand(100))
+  const rings = await ringed.findAll({ type: 'Svg' })
+  const arcColours = rings.map(
+    ring => /stroke="(#[0-9A-Fa-f]{6})" stroke-width="2.5" stroke-dasharray/.exec(String(ring.props.source))?.[1],
+  )
+
+  expect(arcColours).toEqual([EDITOR_RED, EDITOR_GREEN, EDITOR_YELLOW])
+  await ringed.unmount()
+
+  // The desktop keeps the theme's own colours.
   const desktop = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   expect((await desktop.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe('warning')
+  expect((await desktop.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
   expect((await desktop.find({ type: 'Text', text: /Session/ }))?.props.size).toBeUndefined()
   await desktop.unmount()
+})
+
+test('an empty ring has no arc and a full one is closed', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 0, resetsAt: isoAfter(HOUR_MS) },
+        { kind: 'seven_day', percentUsed: 100, resetsAt: isoAfter(DAY_MS) },
+      ],
+      { window: 200_000, tokens: 0, percent: 0 },
+    ),
+  )
+
+  const ui = await $.ui.mount(editorBand(100))
+  const [empty, , full] = await ui.findAll({ type: 'Svg' })
+
+  expect(String(empty?.props.source).match(/<circle/g)).toHaveLength(1)
+  expect(String(full?.props.source)).toContain('stroke-dasharray="37.70 37.70"')
+  await ui.unmount()
 })
 
 test('the refresh button sits left of the close button', async ($, on) => {
