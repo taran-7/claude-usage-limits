@@ -583,7 +583,7 @@ test('the close button is there with the limits alone, and the compact button is
 
 const EDITOR_YELLOW = '#ca8a04'
 
-test('in the editor the band is one small line without the labels and the bars', async ($, on) => {
+test('in the editor the band is one small line without the labels', async ($, on) => {
   setUp(on)
   await $.session.measure(
     measurement(
@@ -597,7 +597,7 @@ test('in the editor the band is one small line without the labels and the bars',
 
   const ui = await $.ui.mount({ ...BAND, surface: 'vscode' })
 
-  expect((await ui.find({ type: 'Text', text: /34%/ }))?.text).toBe('34% 68k/200k · 23% 2h 14m · 41% 3d 5h')
+  expect((await ui.find({ type: 'Text', text: /34%/ }))?.text).toBe('███░░░░░ 34% 68k/200k · ██░░░░░░ 23% 2h 14m · ███░░░░░ 41% 3d 5h')
 
   // One row that does not wrap, its readings free to shrink, in the caption size.
   const [row, , readings] = await ui.findAll({ type: 'Box' })
@@ -626,6 +626,8 @@ test('in the editor the warning colour is given outright, as its theme leaves it
   expect((await editor.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
   expect((await editor.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe('success')
   expect((await editor.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe(EDITOR_YELLOW)
+  // The bar takes the colour with the percent.
+  expect((await editor.find({ type: 'Text', text: /^██████░░\s*$/ }))?.props.color).toBe(EDITOR_YELLOW)
   await editor.unmount()
 
   const desktop = await $.ui.mount({ ...BAND, surface: 'desktop' })

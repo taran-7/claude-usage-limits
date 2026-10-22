@@ -21,7 +21,7 @@ The labels, the countdowns (`d`, `h`, `m` for days, hours, minutes) and the toas
 - Subscription limits exist only for accounts with a subscription, and only after the first response in a session. Without them, only the context is shown.
 - When a limit window has already reset, the time is replaced by `just reset` and its bar drops to 0%: the engine reports a limit only with a response, so until the next one the old reading would be stale. The next response brings the new window's own figure.
 - On a narrow window the row is cut off at the end instead of wrapping.
-- In the VS Code extension the row is one small line: the same readings in the caption size, without the labels and the bars, and with the yellow given outright because the extension's theme leaves its own warning colour unset. The extension adds its own "From the usage-limits plugin" label above the row, which a mod cannot remove.
+- In the VS Code extension the row is one small line: the same readings and bars in the caption size, without the labels, and with the yellow given outright because the extension's theme leaves its own warning colour unset. The extension adds its own "From the usage-limits plugin" label above the row, which a mod cannot remove.
 
 ## Install
 

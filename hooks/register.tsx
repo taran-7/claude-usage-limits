@@ -326,9 +326,8 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const hasContext = segments.some(segment => segment.key === 'context')
 
-    // In the editor's panel the band is one small line: the labels and the bars
-    // are left out, as its font does not keep the blocks to one width, and the
-    // text is set in the caption size.
+    // In the editor's panel the band is one small line: the labels are left
+    // out and the text is set in the caption size.
     const isEditor = e.surface === 'vscode'
     const textProps = isEditor ? { size: 'caption' as const } : {}
     const tint = (color: string) => (isEditor && color === 'warning' ? EDITOR_YELLOW : color)
@@ -336,12 +335,10 @@ export const register: Register = on => {
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
       <Text key={key} {...textProps}>
         {isEditor ? null : `${label} `}
-        {isEditor ? null : (
-          <Text color={color} mono>
-            {`${drawBar(percent)} `}
-          </Text>
-        )}
-        <Text color={tint(color)} mono={!isEditor} {...textProps}>
+        <Text color={tint(color)} mono {...textProps}>
+          {`${drawBar(percent)} `}
+        </Text>
+        <Text color={tint(color)} mono {...textProps}>
           {`${Math.round(percent)}%`}
         </Text>
         {detail === '' ? null : (
