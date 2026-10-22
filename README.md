@@ -19,7 +19,7 @@ The labels and toasts are in Ukrainian: `Контекст` is Context, `Сесі
 - The context bar and percentage are green up to 40%, yellow from 41% to 60% and dark red from 61%. The session and week bars are green below 70%, yellow from 70% and red from 90%.
 - The countdown refreshes on its own every 30 seconds. The numbers themselves arrive after each model response.
 - Subscription limits exist only for accounts with a subscription, and only after the first response in a session. Without them, only the context is shown.
-- When a limit window has already reset, the time is replaced by `щойно скинуто` ("just reset").
+- When a limit window has already reset, the time is replaced by `щойно скинуто` ("just reset") and its bar drops to 0%: the engine reports a limit only with a response, so until the next one the old reading would be stale. The next response brings the new window's own figure.
 - On a narrow window the row is cut off at the end instead of wrapping.
 
 ## Install
