@@ -23,6 +23,7 @@ const CONTEXT_YELLOW_UNTIL = 60
 const DARK_RED = '#b91c1c'
 const SEPARATOR = ' · '
 const COMPACT_ICON = '🗜️'
+const CLOSE_ICON = '×'
 
 type Segment = {
   key: string
@@ -38,6 +39,7 @@ const limits = atom(
 )
 const context = atom({ plugin: 'usage-limits', key: 'context' } as const, null)
 const compacting = atom({ plugin: 'usage-limits', key: 'isCompacting' } as const, false)
+const hidden = atom({ plugin: 'usage-limits', key: 'isHidden' } as const, false)
 const tick = atom({ plugin: 'usage-limits', key: 'tick' } as const, 0)
 
 const toContextFill = (usage: SessionContextUsage): ContextFill | null => {
@@ -211,9 +213,10 @@ export const register: Register = on => {
 
     const now = await $.clock.now()
     const isBusy = await read($, compacting)
+    const isHidden = await read($, hidden)
     const segments = toSegments(await read($, context), await read($, limits), now)
 
-    if (e.props.hasSurvey || segments.length === 0) {
+    if (e.props.hasSurvey || isHidden || segments.length === 0) {
       return next(e)
     }
 
@@ -267,6 +270,18 @@ export const register: Register = on => {
               : [separator(index), drawSegment(segment)],
           )}
         </Text>
+        {/* The desktop draws a dismiss Button as its own close control at the
+            band's trailing edge. It hides the band in this chat only: the
+            state is the session's, so a new chat shows it again. */}
+        <Button
+          key="close"
+          role="dismiss"
+          label={CLOSE_ICON}
+          dimColor
+          onPress={() => {
+            void update($, hidden, () => true)
+          }}
+        />
       </Box>
     )
   })
