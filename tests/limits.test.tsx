@@ -128,7 +128,7 @@ type Finder = {
 }
 
 const contextOf = async (ui: Finder) =>
-  (await ui.find({ type: 'Text', text: /Контекст/ }))?.text
+  (await ui.find({ type: 'Text', text: /Context/ }))?.text
 
 const isoAfter = (ms: number) => new Date(NOW + ms).toISOString()
 
@@ -149,7 +149,7 @@ test('draws context, session and week in one row, on every surface', async ($, o
     const ui = await $.ui.mount({ ...BAND, surface })
 
     expect(await contextOf(ui)).toBe(
-      'Контекст ███░░░░░ 34% 68k/200k · Сесія ██░░░░░░ 23% 2 год 14 хв · Тиждень ███░░░░░ 41% 3 дн 5 год',
+      'Context ███░░░░░ 34% 68k/200k · Session ██░░░░░░ 23% 2h 14m · Week ███░░░░░ 41% 3d 5h',
     )
     // The row that spans the band and the part inside it that grows.
     expect(await ui.findAll({ type: 'Box' })).toHaveLength(2)
@@ -170,11 +170,11 @@ test('the countdown moves with the clock between responses', async ($, on) => {
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █░░░░░░░ 10% 1 год 30 хв')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session █░░░░░░░ 10% 1h 30m')
 
   await clock.advance(31 * MINUTE_MS)
 
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █░░░░░░░ 10% 59 хв')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session █░░░░░░░ 10% 59m')
   await ui.unmount()
 })
 
@@ -189,8 +189,8 @@ test('a window that already reset says so and starts again from nothing', async 
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe(
-    'Сесія ░░░░░░░░ 0% щойно скинуто · Тиждень ░░░░░░░░ 0% щойно скинуто',
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe(
+    'Session ░░░░░░░░ 0% just reset · Week ░░░░░░░░ 0% just reset',
   )
   // Nothing to compact without a context reading, so no button either.
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
@@ -206,18 +206,18 @@ test('a window that resets while the row is open drops to nothing at the next ti
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █████░░░ 65% 10 хв')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session █████░░░ 65% 10m')
 
   await clock.advance(11 * MINUTE_MS)
 
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ░░░░░░░░ 0% щойно скинуто')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session ░░░░░░░░ 0% just reset')
 
   // The next response brings the new window's own reading.
   await $.session.measure(
     measurement([{ kind: 'five_hour', percentUsed: 3, resetsAt: isoAfter(5 * HOUR_MS + 11 * MINUTE_MS) }]),
   )
 
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ░░░░░░░░ 3% 5 год 0 хв')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session ░░░░░░░░ 3% 5h 0m')
   await ui.unmount()
 })
 
@@ -246,7 +246,7 @@ test('draws nothing without a reading, and yields to a survey', async ($, on) =>
   setUp(on)
 
   const quiet = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await quiet.find({ type: 'Text', text: /Сесія/ })).toBeUndefined()
+  expect(await quiet.find({ type: 'Text', text: /Session/ })).toBeUndefined()
   await quiet.unmount()
 
   await $.session.measure(
@@ -258,7 +258,7 @@ test('draws nothing without a reading, and yields to a survey', async ($, on) =>
     surface: 'desktop',
     props: { ...BAND.props, hasSurvey: true },
   })
-  expect(await surveyed.find({ type: 'Text', text: /Сесія/ })).toBeUndefined()
+  expect(await surveyed.find({ type: 'Text', text: /Session/ })).toBeUndefined()
   await surveyed.unmount()
 })
 
@@ -269,7 +269,7 @@ test('derives the context percent from tokens when the engine reports none', asy
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░ 25% 250k/1M')
+  expect(await contextOf(ui)).toBe('Context ██░░░░░░ 25% 250k/1M')
   await ui.unmount()
 })
 
@@ -281,8 +281,8 @@ test('shows the context alone when no subscription limits are reported', async (
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   expect(await contextOf(ui)).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Сесія/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /Тиждень/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Session/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Week/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -292,10 +292,10 @@ test('the context follows each measurement', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 40_000, percent: 20 }))
-  expect(await contextOf(ui)).toBe('Контекст ██░░░░░░ 20% 40k/200k')
+  expect(await contextOf(ui)).toBe('Context ██░░░░░░ 20% 40k/200k')
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 190_000, percent: 95 }))
-  expect(await contextOf(ui)).toBe('Контекст ████████ 95% 190k/200k')
+  expect(await contextOf(ui)).toBe('Context ████████ 95% 190k/200k')
 
   await ui.unmount()
 })
@@ -325,11 +325,11 @@ test('a compaction refreshes the context from the live transcript', async ($, on
   await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
 
   expect(compactions).toEqual(['called'])
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
 
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+  expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
@@ -341,7 +341,7 @@ test('without an estimate a compaction leaves the context as it was', async ($, 
   await $.session.compact({ trigger: 'auto', messages: [SUMMARY] })
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -354,7 +354,7 @@ test("after the button's /compact the context follows the new conversation", asy
   await ui.press({ key: 'compact' })
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+  expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
@@ -379,10 +379,10 @@ test('the rows a typed /compact leaves refresh the context', async ($, on) => {
   for (const text of [COMPACT_COMMAND, COMPACT_OUTPUT]) {
     await $.session.measure(measurement([], { window: 200_000, tokens: 68_000, percent: 34 }))
     await $.session.append(commandRow(text))
-    expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+    expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
 
     await clock.advance(1_500)
-    expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+    expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
   }
 
   await ui.unmount()
@@ -400,7 +400,7 @@ test("another command's rows, a subagent's and a note leave the context as it wa
   await $.session.append(commandRow(COMPACT_COMMAND, { door: 'note' }))
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -412,11 +412,11 @@ test('a compaction nothing announced is caught on the next tick', async ($, on) 
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
 
   await clock.advance(30_000)
 
-  expect(await contextOf(ui)).toBe('Контекст █░░░░░░░ 12% 24k/200k')
+  expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
@@ -431,7 +431,7 @@ test('the tick leaves a context the engine still reports', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await clock.advance(30_000)
 
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -454,7 +454,7 @@ test('a vetoed, a precomputed and a subagent compaction leave the context as it 
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const before = 'Контекст ███░░░░░ 34% 68k/200k'
+  const before = 'Context ███░░░░░ 34% 68k/200k'
 
   compact = () => ({ skip: 'off' })
   await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
@@ -482,8 +482,8 @@ test('a /compact that cannot run leaves the context and the button as they were'
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await ui.press({ key: 'compact' })
 
-  expect(toasts).toEqual(['Compact не вдалося запустити'])
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(toasts).toEqual(['Compact could not be started'])
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
   await ui.unmount()
 })
@@ -516,7 +516,7 @@ test('a reading without a context figure keeps the last one', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await $.session.measure(measurement([], { window: 200_000 }))
 
-  expect(await contextOf(ui)).toBe('Контекст ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -594,11 +594,11 @@ test('/limits hides an open band and brings a closed one back', async ($, on) =>
   expect(await contextOf(ui)).toBeDefined()
 
   const hidden = await $.command.run(LIMITS_COMMAND)
-  expect(hidden.text).toContain('сховано')
+  expect(hidden.text).toContain('hidden')
   expect(await contextOf(ui)).toBeUndefined()
 
   const shown = await $.command.run(LIMITS_COMMAND)
-  expect(shown.text).toContain('показано')
+  expect(shown.text).toContain('shown')
   expect(await contextOf(ui)).toBeDefined()
 
   await ui.press({ key: 'close' })

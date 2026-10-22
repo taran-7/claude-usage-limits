@@ -78,14 +78,14 @@ const formatRemaining = (ms: number): string => {
   const hours = Math.floor((ms % DAY_MS) / HOUR_MS)
   const minutes = Math.floor((ms % HOUR_MS) / MINUTE_MS)
 
-  if (days > 0) return `${days} дн ${hours} год`
-  if (hours > 0) return `${hours} год ${minutes} хв`
-  return `${Math.max(minutes, 1)} хв`
+  if (days > 0) return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${Math.max(minutes, 1)}m`
 }
 
 const describeContext = (fill: ContextFill): string =>
   fill.tokens === null
-    ? `вікно ${formatTokens(fill.window)}`
+    ? `window ${formatTokens(fill.window)}`
     : `${formatTokens(fill.tokens)}/${formatTokens(fill.window)}`
 
 const hasReset = (window: LimitWindow, now: number): boolean =>
@@ -95,7 +95,7 @@ const describeReset = (window: LimitWindow, now: number): string => {
   if (window.resetsAt === null) return ''
 
   return hasReset(window, now)
-    ? 'щойно скинуто'
+    ? 'just reset'
     : formatRemaining(Date.parse(window.resetsAt) - now)
 }
 
@@ -134,7 +134,7 @@ const toSegments = (
   if (fill !== null) {
     segments.push({
       key: 'context',
-      label: 'Контекст',
+      label: 'Context',
       percent: fill.percent,
       color: pickContextColor(fill.percent),
       detail: describeContext(fill),
@@ -145,7 +145,7 @@ const toSegments = (
 
     segments.push({
       key: 'session',
-      label: 'Сесія',
+      label: 'Session',
       percent,
       color: pickColor(percent),
       detail: describeReset(session, now),
@@ -156,7 +156,7 @@ const toSegments = (
 
     segments.push({
       key: 'week',
-      label: 'Тиждень',
+      label: 'Week',
       percent,
       color: pickColor(percent),
       detail: describeReset(week, now),
@@ -224,7 +224,7 @@ const compactNow = async ($: EngineInterface) => {
     await $.command.run({ command: 'compact' })
     refreshSoon($)
   } catch {
-    $.ui.toast('Compact не вдалося запустити')
+    $.ui.toast('Compact could not be started')
   } finally {
     await update($, compacting, () => false)
   }
@@ -235,11 +235,11 @@ const registerCommand = async ($: EngineInterface) => {
   try {
     await $.command.register({
       name: COMMAND,
-      description: 'Показати або сховати смугу з контекстом і лімітами',
+      description: 'Show or hide the row with the context and the limits',
       immediate: true,
     })
   } catch {
-    $.ui.toast(`/${COMMAND} не вдалося зареєструвати`)
+    $.ui.toast(`/${COMMAND} could not be registered`)
   }
 }
 
@@ -269,10 +269,10 @@ export const register: Register = on => {
 
     return {
       text: isNowHidden
-        ? 'Смугу з лімітами сховано. /limits повертає її.'
-        : 'Смугу з лімітами показано.',
+        ? 'The limits row is hidden. /limits brings it back.'
+        : 'The limits row is shown.',
     }
-  }).catch(() => ({ text: 'Не вдалося перемкнути смугу з лімітами.' }))
+  }).catch(() => ({ text: 'Could not toggle the limits row.' }))
 
   // Every compaction leaves the context smaller. A subagent's own does not
   // count. Not every surface announces one here: the desktop's /compact does
