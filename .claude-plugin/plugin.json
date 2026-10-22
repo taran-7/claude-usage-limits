@@ -1,6 +1,6 @@
 {
   "name": "usage-limits",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "One line above the prompt: context window fill, the five-hour session limit and the weekly limit, with bars and the time left until each limit resets.",
   "author": { "name": "Olex" },
   "repository": "https://github.com/taran-7/claude-usage-limits",
