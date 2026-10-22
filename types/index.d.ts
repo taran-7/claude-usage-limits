@@ -29,6 +29,8 @@ declare module 'claude-code' {
       context: ContextFill | null
       /** True while a compaction started from the context button runs. */
       isCompacting: boolean
+      /** True once the person closed the band in this chat. */
+      isHidden: boolean
       /** Bumped by a timer so the countdown redraws between API responses. */
       tick: number
     }

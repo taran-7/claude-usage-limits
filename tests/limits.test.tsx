@@ -35,6 +35,7 @@ const setUp = (on: On, now = NOW) => {
   const clock = mock.clock(on, { now })
 
   compactions.length = 0
+  registered.length = 0
   toasts.length = 0
   compact = DEFAULT_COMPACTION
   holdCompaction = false
@@ -54,6 +55,11 @@ const setUp = (on: On, now = NOW) => {
     toasts.push(e.text)
 
     return { value: undefined } as never
+  })
+  on('command.register', (_$, e) => {
+    registered.push(e.name)
+
+    return { value: { command: e.name } } as never
   })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
@@ -76,6 +82,14 @@ const contextOf = async (ui: Finder) =>
 const DARK_RED = '#b91c1c'
 
 const compactions: string[] = []
+const registered: string[] = []
+
+const LIMITS_COMMAND = {
+  command: 'limits',
+  args: '',
+  origin: { kind: 'composer' as const },
+  presentation: { isFullscreen: false, columns: 100 },
+}
 const toasts: string[] = []
 const SUMMARY = { role: 'assistant' as const, text: 'summary', toolUses: [] }
 
@@ -110,9 +124,11 @@ test('draws context, session and week in one row, on every surface', async ($, o
     expect(await contextOf(ui)).toBe(
       'Контекст ███░░░░░ 34% 68k/200k · Сесія ██░░░░░░ 23% 2 год 14 хв · Тиждень ███░░░░░ 41% 3 дн 5 год',
     )
-    expect(await ui.findAll({ type: 'Box' })).toHaveLength(1)
-    expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
-    expect((await ui.find({ type: 'Button' }))?.props.label).toBe('🗜️')
+    // The row that spans the band and the part inside it that grows.
+    expect(await ui.findAll({ type: 'Box' })).toHaveLength(2)
+    expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
+    expect((await ui.find({ type: 'Button', text: /🗜/ }))?.props.label).toBe('🗜️')
+    expect((await ui.find({ type: 'Button', text: /×/ }))?.props.role).toBe('dismiss')
 
     await ui.unmount()
   }
@@ -145,7 +161,7 @@ test('a window that already reset says so instead of a negative time', async ($,
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ████████ 99% щойно скинуто')
   // Nothing to compact without a context reading, so no button either.
-  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
   await ui.unmount()
 })
 
@@ -242,7 +258,7 @@ test('pressing the context compacts the conversation and shows the size after it
   expect(await contextOf(ui)).toBe(
     'Контекст ░░░░░░░░ 6% 12k/200k',
   )
-  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
   expect(toasts).toEqual(['Стискаю контекст…', 'Контекст стиснуто: 68k → 12k'])
   await ui.unmount()
 })
@@ -276,7 +292,7 @@ test('a compaction that fails leaves the context and the button as they were', a
   expect(await contextOf(ui)).toBe(
     'Контекст ███░░░░░ 34% 68k/200k',
   )
-  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
   expect(toasts).toEqual(['Стискаю контекст…', 'Compact неможливий, поки триває відповідь'])
   await ui.unmount()
 })
@@ -291,13 +307,13 @@ test('while a compaction runs the button gives way to an hourglass', async ($, o
 
   await clock.advance(0)
 
-  expect(await ui.findAll({ type: 'Button' })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
   expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
 
   releaseCompaction()
   await pressed
 
-  expect(await ui.findAll({ type: 'Button' })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
   expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -328,5 +344,65 @@ test('the context is green to 40%, yellow from 41% to 60% and dark red from 61%'
   expect(await colorAt(99)).toBe(DARK_RED)
   expect(await colorAt(100)).toBe(DARK_RED)
 
+  await ui.unmount()
+})
+
+test('the close button hides the band in this chat, and new readings do not bring it back', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await contextOf(ui)).toBeDefined()
+
+  await ui.press({ key: 'close' })
+  expect(await contextOf(ui)).toBeUndefined()
+
+  await measureContext($)
+  expect(await contextOf(ui)).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the close button is there with the limits alone, and the compact button is not', async ($, on) => {
+  setUp(on)
+
+  await $.session.measure(
+    measurement([{ kind: 'five_hour', percentUsed: 10, resetsAt: isoAfter(HOUR_MS) }]),
+  )
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect(await ui.findAll({ type: 'Button', text: /×/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
+  await ui.unmount()
+})
+
+test('registers /limits when the session starts', async ($, on) => {
+  setUp(on)
+
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+
+  expect(registered).toEqual(['limits'])
+})
+
+test('/limits hides an open band and brings a closed one back', async ($, on) => {
+  setUp(on)
+  await measureContext($)
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect(await contextOf(ui)).toBeDefined()
+
+  const hidden = await $.command.run(LIMITS_COMMAND)
+  expect(hidden.text).toContain('сховано')
+  expect(await contextOf(ui)).toBeUndefined()
+
+  const shown = await $.command.run(LIMITS_COMMAND)
+  expect(shown.text).toContain('показано')
+  expect(await contextOf(ui)).toBeDefined()
+
+  await ui.press({ key: 'close' })
+  expect(await contextOf(ui)).toBeUndefined()
+
+  await $.command.run(LIMITS_COMMAND)
+  expect(await contextOf(ui)).toBeDefined()
   await ui.unmount()
 })

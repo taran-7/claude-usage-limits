@@ -23,6 +23,8 @@ const CONTEXT_YELLOW_UNTIL = 60
 const DARK_RED = '#b91c1c'
 const SEPARATOR = ' · '
 const COMPACT_ICON = '🗜️'
+const CLOSE_ICON = '×'
+const COMMAND = 'limits'
 
 type Segment = {
   key: string
@@ -38,6 +40,7 @@ const limits = atom(
 )
 const context = atom({ plugin: 'usage-limits', key: 'context' } as const, null)
 const compacting = atom({ plugin: 'usage-limits', key: 'isCompacting' } as const, false)
+const hidden = atom({ plugin: 'usage-limits', key: 'isHidden' } as const, false)
 const tick = atom({ plugin: 'usage-limits', key: 'tick' } as const, 0)
 
 const toContextFill = (usage: SessionContextUsage): ContextFill | null => {
@@ -187,10 +190,24 @@ const compactNow = async ($: EngineInterface) => {
   }
 }
 
+// A refused name must not stop the timer and the readings that follow.
+const registerCommand = async ($: EngineInterface) => {
+  try {
+    await $.command.register({
+      name: COMMAND,
+      description: 'Показати або сховати смугу з контекстом і лімітами',
+      immediate: true,
+    })
+  } catch {
+    $.ui.toast(`/${COMMAND} не вдалося зареєструвати`)
+  }
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     $.clock.every(TICK_MS, () => update($, tick, n => n + 1))
     await update($, compacting, () => false)
+    await registerCommand($)
 
     const usage = await $.session.usage()
     await update($, limits, () => toLimits(usage.rateLimits))
@@ -198,6 +215,20 @@ export const register: Register = on => {
 
     return next(e)
   })
+
+  // The same switch the close button throws, so `/limits` brings a closed band
+  // back and hides an open one.
+  on('command.run', { command: COMMAND }, async $ => {
+    const isNowHidden = !(await read($, hidden))
+
+    await update($, hidden, () => isNowHidden)
+
+    return {
+      text: isNowHidden
+        ? 'Смугу з лімітами сховано. /limits повертає її.'
+        : 'Смугу з лімітами показано.',
+    }
+  }).catch(() => ({ text: 'Не вдалося перемкнути смугу з лімітами.' }))
 
   on('session.measure', async ($, e, next) => {
     await update($, limits, () => toLimits(e.rateLimits))
@@ -211,9 +242,10 @@ export const register: Register = on => {
 
     const now = await $.clock.now()
     const isBusy = await read($, compacting)
+    const isHidden = await read($, hidden)
     const segments = toSegments(await read($, context), await read($, limits), now)
 
-    if (e.props.hasSurvey || segments.length === 0) {
+    if (e.props.hasSurvey || isHidden || segments.length === 0) {
       return next(e)
     }
 
@@ -256,17 +288,39 @@ export const register: Register = on => {
         />
       )
 
+    // The outer row spans the band and the left part grows into the room that
+    // is left, which puts the close button at the band's right edge.
     return (
-      <Box flexDirection="row" alignItems="center" columnGap="sm">
-        {hasContext ? drawCompact() : null}
-        {/* One Text, so the segments keep a single row on every surface. */}
-        <Text wrap="truncate-end">
-          {segments.flatMap((segment, index) =>
-            index === 0
-              ? [drawSegment(segment)]
-              : [separator(index), drawSegment(segment)],
-          )}
-        </Text>
+      <Box flexDirection="row" alignItems="center" columnGap="sm" width="100%">
+        <Box
+          flexDirection="row"
+          alignItems="center"
+          columnGap="sm"
+          flexGrow={1}
+          flexShrink={1}
+        >
+          {hasContext ? drawCompact() : null}
+          {/* One Text, so the segments keep a single row on every surface. */}
+          <Text wrap="truncate-end">
+            {segments.flatMap((segment, index) =>
+              index === 0
+                ? [drawSegment(segment)]
+                : [separator(index), drawSegment(segment)],
+            )}
+          </Text>
+        </Box>
+        {/* The desktop draws a dismiss Button as a close control. It hides the
+            band in this chat only: the state is the session's, so a new chat
+            shows it again. */}
+        <Button
+          key="close"
+          role="dismiss"
+          label={CLOSE_ICON}
+          dimColor
+          onPress={() => {
+            void update($, hidden, () => true)
+          }}
+        />
       </Box>
     )
   })
