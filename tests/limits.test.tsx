@@ -178,17 +178,46 @@ test('the countdown moves with the clock between responses', async ($, on) => {
   await ui.unmount()
 })
 
-test('a window that already reset says so instead of a negative time', async ($, on) => {
+test('a window that already reset says so and starts again from nothing', async ($, on) => {
   setUp(on)
 
   await $.session.measure(
-    measurement([{ kind: 'five_hour', percentUsed: 99, resetsAt: isoAfter(-MINUTE_MS) }]),
+    measurement([
+      { kind: 'five_hour', percentUsed: 99, resetsAt: isoAfter(-MINUTE_MS) },
+      { kind: 'seven_day', percentUsed: 65, resetsAt: isoAfter(-HOUR_MS) },
+    ]),
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ████████ 99% щойно скинуто')
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe(
+    'Сесія ░░░░░░░░ 0% щойно скинуто · Тиждень ░░░░░░░░ 0% щойно скинуто',
+  )
   // Nothing to compact without a context reading, so no button either.
   expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
+  await ui.unmount()
+})
+
+test('a window that resets while the row is open drops to nothing at the next tick', async ($, on) => {
+  const clock = setUp(on)
+
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: true })
+  await $.session.measure(
+    measurement([{ kind: 'five_hour', percentUsed: 65, resetsAt: isoAfter(10 * MINUTE_MS) }]),
+  )
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія █████░░░ 65% 10 хв')
+
+  await clock.advance(11 * MINUTE_MS)
+
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ░░░░░░░░ 0% щойно скинуто')
+
+  // The next response brings the new window's own reading.
+  await $.session.measure(
+    measurement([{ kind: 'five_hour', percentUsed: 3, resetsAt: isoAfter(5 * HOUR_MS + 11 * MINUTE_MS) }]),
+  )
+
+  expect((await ui.find({ type: 'Text', text: /Сесія/ }))?.text).toBe('Сесія ░░░░░░░░ 3% 5 год 0 хв')
   await ui.unmount()
 })
 

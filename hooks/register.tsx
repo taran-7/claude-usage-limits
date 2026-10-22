@@ -88,13 +88,21 @@ const describeContext = (fill: ContextFill): string =>
     ? `вікно ${formatTokens(fill.window)}`
     : `${formatTokens(fill.tokens)}/${formatTokens(fill.window)}`
 
+const hasReset = (window: LimitWindow, now: number): boolean =>
+  window.resetsAt !== null && Date.parse(window.resetsAt) <= now
+
 const describeReset = (window: LimitWindow, now: number): string => {
   if (window.resetsAt === null) return ''
 
-  const remaining = Date.parse(window.resetsAt) - now
-
-  return remaining > 0 ? formatRemaining(remaining) : 'щойно скинуто'
+  return hasReset(window, now)
+    ? 'щойно скинуто'
+    : formatRemaining(Date.parse(window.resetsAt) - now)
 }
+
+// The engine reports a limit only with a response, so a window that has reset
+// since still carries the reading from before. It starts again from nothing.
+const usedNow = (window: LimitWindow, now: number): number =>
+  hasReset(window, now) ? 0 : window.percentUsed
 
 const drawBar = (percent: number): string => {
   const filled = Math.round((Math.min(percent, 100) * BAR_WIDTH) / 100)
@@ -133,20 +141,24 @@ const toSegments = (
     })
   }
   if (session !== null) {
+    const percent = usedNow(session, now)
+
     segments.push({
       key: 'session',
       label: 'Сесія',
-      percent: session.percentUsed,
-      color: pickColor(session.percentUsed),
+      percent,
+      color: pickColor(percent),
       detail: describeReset(session, now),
     })
   }
   if (week !== null) {
+    const percent = usedNow(week, now)
+
     segments.push({
       key: 'week',
       label: 'Тиждень',
-      percent: week.percentUsed,
-      color: pickColor(week.percentUsed),
+      percent,
+      color: pickColor(percent),
       detail: describeReset(week, now),
     })
   }
