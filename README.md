@@ -3,14 +3,14 @@
 A Claude Code mod that draws one row above the prompt: how full the context window of the current session is, the five-hour subscription limit and the weekly limit, each with a bar and the time left until it resets.
 
 ```
-🗜️ Context ███░░░░░ 34% 68k/200k · Session ██░░░░░░ 23% 2h 20m · Week ███░░░░░ 41% 3d 5h
+♻️ Context ███░░░░░ 34% 68k/200k · Session ██░░░░░░ 23% 2h 20m · Week ███░░░░░ 41% 3d 5h
 ```
 
 The labels, the countdowns (`d`, `h`, `m` for days, hours, minutes) and the toasts are in English. They live in `hooks/register.tsx` and are easy to change.
 
 ## What it shows
 
-- **Compact button**: a small icon (a clamp) at the left. It runs the real `/compact` command, so the command and its result show up in the chat as if you had typed it. Pressed while a model turn is running, it waits and runs as soon as the chat is free. While it runs, the button is replaced by an hourglass.
+- **Compact button**: a small recycling icon at the left. It runs the real `/compact` command, so the command and its result show up in the chat as if you had typed it. Pressed while a model turn is running, it waits and runs as soon as the chat is free. While it runs, the button is replaced by an hourglass.
 - **After a compaction** the context bar drops to the engine's estimate of the new conversation: within a couple of seconds for the button and a typed `/compact`, and at the next 30-second tick for any other one, such as the automatic one. The engine reports its own figure only with the next response, and the bar switches to it then; the two can differ by a point or two.
 - **Context**: how full the context window is, as a percentage, and `tokens/window`.
 - **Close button**: a small `×` at the right edge hides the band in the current chat. It shows again in a new chat, or at once with the `/limits` command, which switches the band off and on and works also while a model turn is running.

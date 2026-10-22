@@ -156,8 +156,8 @@ test('draws context, session and week in one row, on every surface', async ($, o
     const boxes = await ui.findAll({ type: 'Box' })
     expect(boxes).toHaveLength(3)
     expect(boxes.filter(box => box.props.justifyContent === 'center')).toHaveLength(1)
-    expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
-    expect((await ui.find({ type: 'Button', text: /🗜/ }))?.props.label).toBe('🗜️')
+    expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
+    expect((await ui.find({ type: 'Button', text: /♻/ }))?.props.label).toBe('♻️')
     expect((await ui.find({ type: 'Button', text: /×/ }))?.props.role).toBe('dismiss')
 
     await ui.unmount()
@@ -196,7 +196,7 @@ test('a window that already reset says so and starts again from nothing', async 
     'Session ░░░░░░░░ 0% just reset · Week ░░░░░░░░ 0% just reset',
   )
   // Nothing to compact without a context reading, so no button either.
-  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(0)
   await ui.unmount()
 })
 
@@ -315,7 +315,7 @@ test('pressing the button runs /compact as a command', async ($, on) => {
 
   expect(commands).toEqual(['compact'])
   expect(toasts).toEqual([])
-  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
   await ui.unmount()
 })
 
@@ -487,7 +487,7 @@ test('a /compact that cannot run leaves the context and the button as they were'
 
   expect(toasts).toEqual(['Compact could not be started'])
   expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
-  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
   await ui.unmount()
 })
 
@@ -501,13 +501,13 @@ test('while /compact runs the button gives way to an hourglass', async ($, on) =
 
   await clock.advance(0)
 
-  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(0)
   expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeDefined()
 
   releaseCommand()
   await pressed
 
-  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(1)
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
   expect(await ui.find({ type: 'Text', text: /⏳/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -577,7 +577,7 @@ test('the close button is there with the limits alone, and the compact button is
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   expect(await ui.findAll({ type: 'Button', text: /×/ })).toHaveLength(1)
-  expect(await ui.findAll({ type: 'Button', text: /🗜/ })).toHaveLength(0)
+  expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(0)
   await ui.unmount()
 })
 
