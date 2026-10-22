@@ -21,6 +21,9 @@ const BAR_WIDTH = 8
 const CONTEXT_GREEN_UNTIL = 40
 const CONTEXT_YELLOW_UNTIL = 60
 const DARK_RED = '#b91c1c'
+// The editor's theme leaves its `warning` colour unset, so the text comes out
+// white there: yellow is given outright.
+const EDITOR_YELLOW = '#ca8a04'
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
 const CLOSE_ICON = '×'
@@ -323,21 +326,34 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const hasContext = segments.some(segment => segment.key === 'context')
 
+    // In the editor's panel the band is one small line: the labels and the bars
+    // are left out, as its font does not keep the blocks to one width, and the
+    // text is set in the caption size.
+    const isEditor = e.surface === 'vscode'
+    const textProps = isEditor ? { size: 'caption' as const } : {}
+    const tint = (color: string) => (isEditor && color === 'warning' ? EDITOR_YELLOW : color)
+
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
-      <Text key={key}>
-        {`${label} `}
-        <Text color={color} mono>
-          {`${drawBar(percent)} `}
-        </Text>
-        <Text color={color} mono>
+      <Text key={key} {...textProps}>
+        {isEditor ? null : `${label} `}
+        {isEditor ? null : (
+          <Text color={color} mono>
+            {`${drawBar(percent)} `}
+          </Text>
+        )}
+        <Text color={tint(color)} mono={!isEditor} {...textProps}>
           {`${Math.round(percent)}%`}
         </Text>
-        {detail === '' ? null : <Text dimColor>{` ${detail}`}</Text>}
+        {detail === '' ? null : (
+          <Text dimColor {...textProps}>
+            {` ${detail}`}
+          </Text>
+        )}
       </Text>
     )
 
     const separator = (index: number) => (
-      <Text key={`separator-${index}`} dimColor>
+      <Text key={`separator-${index}`} dimColor {...textProps}>
         {SEPARATOR}
       </Text>
     )
@@ -362,7 +378,13 @@ export const register: Register = on => {
     // The outer row spans the band: the compact button at its left edge, the
     // close button at its right, and the readings centred in the room between.
     return (
-      <Box flexDirection="row" alignItems="center" columnGap="sm" width="100%">
+      <Box
+        flexDirection="row"
+        alignItems="center"
+        columnGap="sm"
+        width="100%"
+        {...(isEditor ? { flexWrap: 'nowrap' as const } : {})}
+      >
         <Box flexDirection="row" alignItems="center">
           {hasContext ? drawCompact() : null}
         </Box>
@@ -372,9 +394,10 @@ export const register: Register = on => {
           justifyContent="center"
           flexGrow={1}
           flexShrink={1}
+          {...(isEditor ? { minWidth: 0 } : {})}
         >
           {/* One Text, so the segments keep a single row on every surface. */}
-          <Text wrap="truncate-end">
+          <Text wrap="truncate-end" {...textProps}>
             {segments.flatMap((segment, index) =>
               index === 0
                 ? [drawSegment(segment)]
