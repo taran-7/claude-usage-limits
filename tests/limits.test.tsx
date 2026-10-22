@@ -648,7 +648,7 @@ test('a band too narrow for the rings is drawn as text alone, and one of unknown
     ),
   )
 
-  const narrow = await $.ui.mount(editorBand(59))
+  const narrow = await $.ui.mount(editorBand(31))
 
   expect(await narrow.findAll({ type: 'Svg' })).toHaveLength(0)
   expect((await narrow.find({ type: 'Text', text: /34%/ }))?.text).toBe(
@@ -656,7 +656,7 @@ test('a band too narrow for the rings is drawn as text alone, and one of unknown
   )
   await narrow.unmount()
 
-  for (const columns of [60, 0]) {
+  for (const columns of [32, 0]) {
     const wide = await $.ui.mount(editorBand(columns))
 
     expect(await wide.findAll({ type: 'Svg' })).toHaveLength(3)

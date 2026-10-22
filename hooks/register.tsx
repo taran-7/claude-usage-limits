@@ -33,8 +33,10 @@ const RING_SIZE = 16
 const RING_RADIUS = 6
 const RING_STROKE = 2.5
 // Below this many columns the rings and the text do not fit one line, and the
-// editor draws the readings as text alone. 0 means the width is not known yet.
-const EDITOR_RINGS_FROM = 60
+// editor draws the readings as text alone. The editor counts a column as the
+// width of a box-drawing character in its own font, some 13 to 16 px, not as a
+// monospace cell. 0 means the width is not known yet.
+const EDITOR_RINGS_FROM = 32
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
 const REFRESH_ICON = '↻'
