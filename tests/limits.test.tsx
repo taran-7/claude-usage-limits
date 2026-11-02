@@ -614,8 +614,11 @@ test('in the editor the band is one small line of rings and text without the lab
   expect(await ui.find({ type: 'Text', text: /Context|Session|Week/ })).toBeUndefined()
 
   // One row that does not wrap, its readings free to shrink, in the caption size.
-  const [row, , readings] = await ui.findAll({ type: 'Box' })
-  expect(row?.props.flexWrap).toBe('nowrap')
+  // Every Box says it, as the editor wraps the ones that do not, and a ring's
+  // text would drop below its ring.
+  const boxes = await ui.findAll({ type: 'Box' })
+  const [, , readings] = boxes
+  expect(boxes.filter(box => box.props.flexWrap !== 'nowrap')).toHaveLength(0)
   expect(readings?.props.minWidth).toBe(0)
   expect((await ui.find({ type: 'Text', text: /^34%/ }))?.props.size).toBe('caption')
   // Every part says it truncates, as the editor wraps the ones that do not.
@@ -627,7 +630,7 @@ test('in the editor the band is one small line of rings and text without the lab
   await ui.unmount()
 })
 
-test('a band too narrow for the rings is drawn as letters and percents alone, and one of unknown width as rings', async ($, on) => {
+test('the editor band keeps to one line, giving up the context tokens, then the times left, then the rings', async ($, on) => {
   setUp(on)
   await $.session.measure(
     measurement(
@@ -638,20 +641,37 @@ test('a band too narrow for the rings is drawn as letters and percents alone, an
       { window: 200_000, tokens: 68_000, percent: 34 },
     ),
   )
+  const readings = async (columns: number) => {
+    const ui = await $.ui.mount(editorBand(columns))
+    const rings = (await ui.findAll({ type: 'Svg' })).length
+    const texts = await Promise.all(
+      [/^34%/, /^23%/, /^41%/].map(async text => (await ui.find({ type: 'Text', text }))?.text),
+    )
+    await ui.unmount()
 
-  const narrow = await $.ui.mount(editorBand(31))
+    return { rings, texts }
+  }
+
+  // Room for everything (some 40 columns here), or a width not known yet.
+  for (const columns of [40, 0]) {
+    expect(await readings(columns)).toEqual({ rings: 3, texts: ['34% 68k/200k', '23% 2h 14m', '41% 3d 5h'] })
+  }
+  // The context's tokens go first.
+  for (const columns of [39, 35]) {
+    expect(await readings(columns)).toEqual({ rings: 3, texts: ['34%', '23% 2h 14m', '41% 3d 5h'] })
+  }
+  // Then the time left of the session and the week, the rings staying.
+  for (const columns of [34, 27]) {
+    expect(await readings(columns)).toEqual({ rings: 3, texts: ['34%', '23%', '41%'] })
+  }
+
+  // Too narrow even for bare rings: the letters and the percents alone.
+  const narrow = await $.ui.mount(editorBand(26))
 
   expect(await narrow.findAll({ type: 'Svg' })).toHaveLength(0)
   expect((await narrow.find({ type: 'Text', text: /34%/ }))?.text).toBe('C 34% · S 23% · W 41%')
   expect(await narrow.find({ type: 'Text', text: /68k|2h 14m|3d 5h/ })).toBeUndefined()
   await narrow.unmount()
-
-  for (const columns of [32, 0]) {
-    const wide = await $.ui.mount(editorBand(columns))
-
-    expect(await wide.findAll({ type: 'Svg' })).toHaveLength(3)
-    await wide.unmount()
-  }
 })
 
 test('in the editor the colours are given outright, as its theme leaves some unset', async ($, on) => {
