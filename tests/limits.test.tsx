@@ -589,7 +589,7 @@ const EDITOR_RED = '#C1121C'
 const editorBand = (columns: number) =>
   ({ ...BAND, surface: 'vscode', props: { ...BAND.props, bodyColumns: columns } }) as const
 
-test('in the editor the band is one small line of rings and text without the labels', async ($, on) => {
+test('in the editor the band is one small line of rings and text, named in full when there is room', async ($, on) => {
   setUp(on)
   await $.session.measure(
     measurement(
@@ -611,7 +611,8 @@ test('in the editor the band is one small line of rings and text without the lab
   expect((await ui.find({ type: 'Text', text: /^34%/ }))?.text).toBe('34% 68k/200k')
   expect((await ui.find({ type: 'Text', text: /^23%/ }))?.text).toBe('23% 2h 14m')
   expect((await ui.find({ type: 'Text', text: /^41%/ }))?.text).toBe('41% 3d 5h')
-  expect(await ui.find({ type: 'Text', text: /Context|Session|Week/ })).toBeUndefined()
+  const names = await ui.findAll({ type: 'Text', text: /^(Context|Session|Week)$/ })
+  expect(names.map(name => name.text)).toEqual(['Context', 'Session', 'Week'])
 
   // One row that does not wrap, its readings free to shrink, in the caption size.
   // Every Box says it, as the editor wraps the ones that do not, and a ring's
@@ -630,7 +631,7 @@ test('in the editor the band is one small line of rings and text without the lab
   await ui.unmount()
 })
 
-test('the editor band keeps to one line, giving up the context tokens, then the times left, then the rings', async ($, on) => {
+test('the editor band keeps to one line, giving up the full names, then the context tokens, then the times left, then the rings', async ($, on) => {
   setUp(on)
   await $.session.measure(
     measurement(
@@ -647,22 +648,31 @@ test('the editor band keeps to one line, giving up the context tokens, then the 
     const texts = await Promise.all(
       [/^34%/, /^23%/, /^41%/].map(async text => (await ui.find({ type: 'Text', text }))?.text),
     )
+    const names = (await ui.findAll({ type: 'Text', text: /^(Context|Session|Week|C|S|W)$/ })).map(
+      name => name.text,
+    )
     await ui.unmount()
 
-    return { rings, texts }
+    return { rings, names, texts }
   }
+  const ALL_DETAILS = ['34% 68k/200k', '23% 2h 14m', '41% 3d 5h']
 
-  // Room for everything (some 40 columns here), or a width not known yet.
-  for (const columns of [40, 0]) {
-    expect(await readings(columns)).toEqual({ rings: 3, texts: ['34% 68k/200k', '23% 2h 14m', '41% 3d 5h'] })
+  // Room for everything with the full names (some 49 columns here), or a width
+  // not known yet.
+  for (const columns of [49, 0]) {
+    expect(await readings(columns)).toEqual({ rings: 3, names: ['Context', 'Session', 'Week'], texts: ALL_DETAILS })
+  }
+  // The full names go first, every detail staying.
+  for (const columns of [48, 40]) {
+    expect(await readings(columns)).toEqual({ rings: 3, names: ['C', 'S', 'W'], texts: ALL_DETAILS })
   }
   // The context's tokens go first.
   for (const columns of [39, 35]) {
-    expect(await readings(columns)).toEqual({ rings: 3, texts: ['34%', '23% 2h 14m', '41% 3d 5h'] })
+    expect(await readings(columns)).toEqual({ rings: 3, names: ['C', 'S', 'W'], texts: ['34%', '23% 2h 14m', '41% 3d 5h'] })
   }
   // Then the time left of the session and the week, the rings staying.
   for (const columns of [34, 27]) {
-    expect(await readings(columns)).toEqual({ rings: 3, texts: ['34%', '23%', '41%'] })
+    expect(await readings(columns)).toEqual({ rings: 3, names: ['C', 'S', 'W'], texts: ['34%', '23%', '41%'] })
   }
 
   // Too narrow even for bare rings: the letters and the percents alone.
