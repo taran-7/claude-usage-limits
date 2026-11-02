@@ -377,6 +377,9 @@ export const register: Register = on => {
     const Svg = e.surface === 'vscode' ? $.ui.resolve(e).Svg : null
     const columns = e.props.bodyColumns
     const hasRings = Svg !== null && (columns === 0 || columns >= EDITOR_RINGS_FROM)
+    // Too narrow for the rings, the editor keeps only the letters and the
+    // percents: the tokens and the time left are the first to go.
+    const isNarrow = isEditor && !hasRings
     // The editor wraps a Text unless it says otherwise, and the parts inside the
     // one that truncates wrap on their own, so each says it.
     const textProps = isEditor
@@ -401,7 +404,7 @@ export const register: Register = on => {
         <Text color={tint(color)} mono={!isEditor} {...textProps}>
           {`${Math.round(percent)}%`}
         </Text>
-        {detail === '' ? null : (
+        {detail === '' || isNarrow ? null : (
           <Text dimColor {...textProps}>
             {` ${detail}`}
           </Text>
