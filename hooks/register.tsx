@@ -166,6 +166,9 @@ const drawRing = (percent: number, color: string): string => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${RING_SIZE}" height="${RING_SIZE}" viewBox="0 0 ${RING_SIZE} ${RING_SIZE}">${circle(RING_TRACK)}${arc}</svg>`
 }
 
+// The letter that names each ring in the editor's band.
+const LETTER_COLOR = '#00B0F0'
+
 const toSegments = (
   fill: ContextFill | null,
   { session, week }: Limits,
@@ -383,7 +386,13 @@ export const register: Register = on => {
 
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
       <Text key={key} {...textProps}>
-        {isEditor ? null : `${label} `}
+        {isEditor ? (
+          <Text color={LETTER_COLOR} {...textProps}>
+            {`${label[0]} `}
+          </Text>
+        ) : (
+          `${label} `
+        )}
         {isEditor ? null : (
           <Text color={color} mono>
             {`${drawBar(percent)} `}
@@ -403,6 +412,9 @@ export const register: Register = on => {
     const drawRingSegment = ({ key, label, percent, color, detail }: Segment) =>
       Svg === null ? null : (
         <Box key={key} flexDirection="row" alignItems="center" columnGap="sm">
+          <Text key="letter" color={LETTER_COLOR} {...textProps}>
+            {label[0]}
+          </Text>
           <Svg
             key="ring"
             source={drawRing(percent, tint(color))}
