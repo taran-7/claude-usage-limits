@@ -58,9 +58,9 @@ type Segment = {
   detail: string
 }
 
-// What the editor's band draws: the rings or the letters alone, and the
-// segments with only the details that fit.
-type EditorBand = { hasRings: boolean; segments: Segment[] }
+// What the editor's band draws: the rings or the letters alone, each ring named
+// in full or by its letter, and the segments with only the details that fit.
+type EditorBand = { hasRings: boolean; hasFullLabels: boolean; segments: Segment[] }
 
 // The details the band gives up when it runs short of room, in order: first the
 // context's tokens, then the time left of the session and the week.
@@ -181,16 +181,23 @@ const drawRing = (percent: number, color: string): string => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${RING_SIZE}" height="${RING_SIZE}" viewBox="0 0 ${RING_SIZE} ${RING_SIZE}">${circle(RING_TRACK)}${arc}</svg>`
 }
 
-// The letter that names each ring in the editor's band.
+// The colour of the name, in full or a letter, of each ring in the editor's band.
 const LETTER_COLOR = '#00B0F0'
 
 const describeReading = ({ percent, detail }: Segment): string =>
   detail === '' ? `${Math.round(percent)}%` : `${Math.round(percent)}% ${detail}`
 
-const ringsColumns = (segments: readonly Segment[]): number =>
+const nameOf = ({ label }: Segment, hasFullLabels: boolean): string =>
+  hasFullLabels ? label : label[0] ?? ''
+
+// RING_COLUMNS already holds one letter, so a full label adds the rest of it.
+const ringsColumns = ({ hasFullLabels, segments }: EditorBand): number =>
   BUTTONS_COLUMNS +
   segments.reduce(
-    (sum, segment) => sum + RING_COLUMNS + describeReading(segment).length * CAPTION_CHAR_COLUMNS,
+    (sum, segment) =>
+      sum +
+      RING_COLUMNS +
+      (describeReading(segment).length + nameOf(segment, hasFullLabels).length - 1) * CAPTION_CHAR_COLUMNS,
     0,
   ) +
   (segments.length - 1) * RING_SEPARATOR_COLUMNS
@@ -198,14 +205,18 @@ const ringsColumns = (segments: readonly Segment[]): number =>
 const withoutDetails = (segments: readonly Segment[], keys: readonly string[]): Segment[] =>
   segments.map(segment => (keys.includes(segment.key) ? { ...segment, detail: '' } : segment))
 
-// The richest band that keeps to one line: the details go before the rings, and
-// the letters and the percents alone are left when even bare rings do not fit.
+// The richest band that keeps to one line: the full labels go first, then the
+// details, then the rings, and the letters and the percents alone are left when
+// even bare rings do not fit.
 const fitEditorBand = (segments: readonly Segment[], columns: number): EditorBand => {
-  const candidates = [[...segments], ...DETAIL_DROP_ORDER.map(keys => withoutDetails(segments, keys))]
+  const lettered = [[...segments], ...DETAIL_DROP_ORDER.map(keys => withoutDetails(segments, keys))].map(
+    candidate => ({ hasRings: true, hasFullLabels: false, segments: candidate }),
+  )
+  const candidates = [{ hasRings: true, hasFullLabels: true, segments: [...segments] }, ...lettered]
   const fitting = columns === 0 ? candidates[0] : candidates.find(c => ringsColumns(c) <= columns)
-  const bare = candidates[candidates.length - 1] ?? []
+  const bare = lettered[lettered.length - 1]?.segments ?? []
 
-  return fitting === undefined ? { hasRings: false, segments: bare } : { hasRings: true, segments: fitting }
+  return fitting ?? { hasRings: false, hasFullLabels: false, segments: bare }
 }
 
 const toSegments = (
@@ -409,15 +420,15 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const hasContext = segments.some(segment => segment.key === 'context')
 
-    // In the editor's panel the band is one small line in the caption size, with
-    // no labels: rings beside the percents, giving up the details as the room
-    // runs short, and the letters and the percents alone when even that does not
-    // fit.
+    // In the editor's panel the band is one small line in the caption size:
+    // named rings beside the percents, giving up the full names for letters and
+    // then the details as the room runs short, and the letters and the percents
+    // alone when even that does not fit.
     const isEditor = e.surface === 'vscode'
     const Svg = e.surface === 'vscode' ? $.ui.resolve(e).Svg : null
     const band: EditorBand = isEditor
       ? fitEditorBand(segments, e.props.bodyColumns)
-      : { hasRings: false, segments }
+      : { hasRings: false, hasFullLabels: false, segments }
     const hasRings = Svg !== null && band.hasRings
     // The editor wraps a Box unless it says otherwise, so every Box of its band
     // says it: an estimate that falls short cuts the line's end, never adds a line.
@@ -454,11 +465,13 @@ export const register: Register = on => {
       </Text>
     )
 
-    const drawRingSegment = ({ key, label, percent, color, detail }: Segment) =>
-      Svg === null ? null : (
+    const drawRingSegment = (segment: Segment) => {
+      const { key, label, percent, color, detail } = segment
+
+      return Svg === null ? null : (
         <Box key={key} flexDirection="row" alignItems="center" columnGap="sm" flexShrink={1} minWidth={0} {...rowProps}>
           <Text key="letter" color={LETTER_COLOR} {...textProps}>
-            {label[0]}
+            {nameOf(segment, band.hasFullLabels)}
           </Text>
           <Svg
             key="ring"
@@ -479,6 +492,7 @@ export const register: Register = on => {
           </Text>
         </Box>
       )
+    }
 
     const separator = (index: number) => (
       <Text key={`separator-${index}`} dimColor {...textProps}>
