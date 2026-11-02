@@ -32,11 +32,18 @@ const RING_TRACK = 'rgba(140, 140, 140, 0.35)'
 const RING_SIZE = 16
 const RING_RADIUS = 6
 const RING_STROKE = 2.5
-// Below this many columns the rings and the text do not fit one line, and the
-// editor draws the readings as text alone. The editor counts a column as the
-// width of a box-drawing character in its own font, some 13 to 16 px, not as a
-// monospace cell. 0 means the width is not known yet.
-const EDITOR_RINGS_FROM = 32
+// The editor gives no way to measure a drawing, so the band estimates what each
+// layout takes, in the columns the editor counts: the width of a box-drawing
+// character in its own font, some 16 px, where a character of the caption text
+// takes some 9 px, counted a little wider so the estimate errs towards dropping
+// a detail rather than cutting the line. The buttons and the gaps around them
+// take the same room in every layout; a ring with its letter and gaps, and a
+// separator between rings, take a few columns each. 0 columns means the width
+// is not known yet.
+const CAPTION_CHAR_COLUMNS = 0.6
+const BUTTONS_COLUMNS = 6
+const RING_COLUMNS = 3
+const RING_SEPARATOR_COLUMNS = 3
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
 const CLOSE_ICON = '×'
@@ -50,6 +57,14 @@ type Segment = {
   color: string
   detail: string
 }
+
+// What the editor's band draws: the rings or the letters alone, and the
+// segments with only the details that fit.
+type EditorBand = { hasRings: boolean; segments: Segment[] }
+
+// The details the band gives up when it runs short of room, in order: first the
+// context's tokens, then the time left of the session and the week.
+const DETAIL_DROP_ORDER: readonly (readonly string[])[] = [['context'], ['context', 'session', 'week']]
 
 const limits = atom(
   { plugin: 'usage-limits', key: 'limits' } as const,
@@ -168,6 +183,30 @@ const drawRing = (percent: number, color: string): string => {
 
 // The letter that names each ring in the editor's band.
 const LETTER_COLOR = '#00B0F0'
+
+const describeReading = ({ percent, detail }: Segment): string =>
+  detail === '' ? `${Math.round(percent)}%` : `${Math.round(percent)}% ${detail}`
+
+const ringsColumns = (segments: readonly Segment[]): number =>
+  BUTTONS_COLUMNS +
+  segments.reduce(
+    (sum, segment) => sum + RING_COLUMNS + describeReading(segment).length * CAPTION_CHAR_COLUMNS,
+    0,
+  ) +
+  (segments.length - 1) * RING_SEPARATOR_COLUMNS
+
+const withoutDetails = (segments: readonly Segment[], keys: readonly string[]): Segment[] =>
+  segments.map(segment => (keys.includes(segment.key) ? { ...segment, detail: '' } : segment))
+
+// The richest band that keeps to one line: the details go before the rings, and
+// the letters and the percents alone are left when even bare rings do not fit.
+const fitEditorBand = (segments: readonly Segment[], columns: number): EditorBand => {
+  const candidates = [[...segments], ...DETAIL_DROP_ORDER.map(keys => withoutDetails(segments, keys))]
+  const fitting = columns === 0 ? candidates[0] : candidates.find(c => ringsColumns(c) <= columns)
+  const bare = candidates[candidates.length - 1] ?? []
+
+  return fitting === undefined ? { hasRings: false, segments: bare } : { hasRings: true, segments: fitting }
+}
 
 const toSegments = (
   fill: ContextFill | null,
@@ -371,15 +410,18 @@ export const register: Register = on => {
     const hasContext = segments.some(segment => segment.key === 'context')
 
     // In the editor's panel the band is one small line in the caption size, with
-    // no labels. The readings are rings beside the text when the band is wide
-    // enough, else the text alone.
+    // no labels: rings beside the percents, giving up the details as the room
+    // runs short, and the letters and the percents alone when even that does not
+    // fit.
     const isEditor = e.surface === 'vscode'
     const Svg = e.surface === 'vscode' ? $.ui.resolve(e).Svg : null
-    const columns = e.props.bodyColumns
-    const hasRings = Svg !== null && (columns === 0 || columns >= EDITOR_RINGS_FROM)
-    // Too narrow for the rings, the editor keeps only the letters and the
-    // percents: the tokens and the time left are the first to go.
-    const isNarrow = isEditor && !hasRings
+    const band: EditorBand = isEditor
+      ? fitEditorBand(segments, e.props.bodyColumns)
+      : { hasRings: false, segments }
+    const hasRings = Svg !== null && band.hasRings
+    // The editor wraps a Box unless it says otherwise, so every Box of its band
+    // says it: an estimate that falls short cuts the line's end, never adds a line.
+    const rowProps = isEditor ? { flexWrap: 'nowrap' as const } : {}
     // The editor wraps a Text unless it says otherwise, and the parts inside the
     // one that truncates wrap on their own, so each says it.
     const textProps = isEditor
@@ -404,7 +446,7 @@ export const register: Register = on => {
         <Text color={tint(color)} mono={!isEditor} {...textProps}>
           {`${Math.round(percent)}%`}
         </Text>
-        {detail === '' || isNarrow ? null : (
+        {detail === '' ? null : (
           <Text dimColor {...textProps}>
             {` ${detail}`}
           </Text>
@@ -414,7 +456,7 @@ export const register: Register = on => {
 
     const drawRingSegment = ({ key, label, percent, color, detail }: Segment) =>
       Svg === null ? null : (
-        <Box key={key} flexDirection="row" alignItems="center" columnGap="sm">
+        <Box key={key} flexDirection="row" alignItems="center" columnGap="sm" flexShrink={1} minWidth={0} {...rowProps}>
           <Text key="letter" color={LETTER_COLOR} {...textProps}>
             {label[0]}
           </Text>
@@ -445,7 +487,7 @@ export const register: Register = on => {
     )
 
     const joined = (draw: (segment: Segment) => RenderChildren) =>
-      segments.flatMap((segment, index) =>
+      band.segments.flatMap((segment, index) =>
         index === 0 ? [draw(segment)] : [separator(index), draw(segment)],
       )
 
@@ -474,9 +516,9 @@ export const register: Register = on => {
         alignItems="center"
         columnGap="sm"
         width="100%"
-        {...(isEditor ? { flexWrap: 'nowrap' as const } : {})}
+        {...rowProps}
       >
-        <Box flexDirection="row" alignItems="center">
+        <Box flexDirection="row" alignItems="center" {...rowProps}>
           {hasContext ? drawCompact() : null}
         </Box>
         <Box
@@ -486,9 +528,10 @@ export const register: Register = on => {
           flexGrow={1}
           flexShrink={1}
           {...(isEditor ? { minWidth: 0 } : {})}
+          {...rowProps}
         >
           {hasRings ? (
-            <Box flexDirection="row" alignItems="center" columnGap="sm" flexWrap="nowrap" overflow="hidden">
+            <Box flexDirection="row" alignItems="center" columnGap="sm" flexWrap="nowrap" overflow="hidden" minWidth={0}>
               {joined(drawRingSegment)}
             </Box>
           ) : (
