@@ -184,6 +184,10 @@ const drawRing = (percent: number, color: string): string => {
 // The colour of the name, in full or a letter, of each ring in the editor's band.
 const LETTER_COLOR = '#00B0F0'
 
+// The colour of each reading's name everywhere but the editor: calmer than
+// the editor's, beside the full bars.
+const DESKTOP_LABEL_COLOR = '#7FB8C9'
+
 const describeReading = ({ percent, detail }: Segment): string =>
   detail === '' ? `${Math.round(percent)}%` : `${Math.round(percent)}% ${detail}`
 
@@ -447,7 +451,7 @@ export const register: Register = on => {
             {`${label[0]} `}
           </Text>
         ) : (
-          `${label} `
+          <Text color={DESKTOP_LABEL_COLOR}>{`${label} `}</Text>
         )}
         {isEditor ? null : (
           <Text color={color} mono>
