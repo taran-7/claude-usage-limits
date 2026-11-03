@@ -149,7 +149,7 @@ test('draws context, session and week in one row, on every surface', async ($, o
     const ui = await $.ui.mount({ ...BAND, surface })
 
     expect(await contextOf(ui)).toBe(
-      'Context ███░░░░░ 34% 68k/200k · Session ██░░░░░░ 23% 2h 14m · Week ███░░░░░ 41% 3d 5h',
+      'Context \u00a0███░░░░░ 34% 68k/200k · Session \u00a0██░░░░░░ 23% 2h 14m · Week \u00a0███░░░░░ 41% 3d 5h',
     )
     // The row that spans the band, the compact button's slot at its left and
     // the readings' own part, which grows and centres them.
@@ -173,11 +173,11 @@ test('the countdown moves with the clock between responses', async ($, on) => {
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session █░░░░░░░ 10% 1h 30m')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session \u00a0█░░░░░░░ 10% 1h 30m')
 
   await clock.advance(31 * MINUTE_MS)
 
-  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session █░░░░░░░ 10% 59m')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session \u00a0█░░░░░░░ 10% 59m')
   await ui.unmount()
 })
 
@@ -193,7 +193,7 @@ test('a window that already reset says so and starts again from nothing', async 
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe(
-    'Session ░░░░░░░░ 0% just reset · Week ░░░░░░░░ 0% just reset',
+    'Session \u00a0░░░░░░░░ 0% just reset · Week \u00a0░░░░░░░░ 0% just reset',
   )
   // Nothing to compact without a context reading, so no button either.
   expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(0)
@@ -209,18 +209,18 @@ test('a window that resets while the row is open drops to nothing at the next ti
   )
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session █████░░░ 65% 10m')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session \u00a0█████░░░ 65% 10m')
 
   await clock.advance(11 * MINUTE_MS)
 
-  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session ░░░░░░░░ 0% just reset')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session \u00a0░░░░░░░░ 0% just reset')
 
   // The next response brings the new window's own reading.
   await $.session.measure(
     measurement([{ kind: 'five_hour', percentUsed: 3, resetsAt: isoAfter(5 * HOUR_MS + 11 * MINUTE_MS) }]),
   )
 
-  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session ░░░░░░░░ 3% 5h 0m')
+  expect((await ui.find({ type: 'Text', text: /Session/ }))?.text).toBe('Session \u00a0░░░░░░░░ 3% 5h 0m')
   await ui.unmount()
 })
 
@@ -272,7 +272,7 @@ test('derives the context percent from tokens when the engine reports none', asy
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect(await contextOf(ui)).toBe('Context ██░░░░░░ 25% 250k/1M')
+  expect(await contextOf(ui)).toBe('Context \u00a0██░░░░░░ 25% 250k/1M')
   await ui.unmount()
 })
 
@@ -295,10 +295,10 @@ test('the context follows each measurement', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 40_000, percent: 20 }))
-  expect(await contextOf(ui)).toBe('Context ██░░░░░░ 20% 40k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0██░░░░░░ 20% 40k/200k')
 
   await $.session.measure(measurement([], { window: 200_000, tokens: 190_000, percent: 95 }))
-  expect(await contextOf(ui)).toBe('Context ████████ 95% 190k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0████████ 95% 190k/200k')
 
   await ui.unmount()
 })
@@ -328,11 +328,11 @@ test('a compaction refreshes the context from the live transcript', async ($, on
   await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
 
   expect(compactions).toEqual(['called'])
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
 
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0█░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
@@ -344,7 +344,7 @@ test('without an estimate a compaction leaves the context as it was', async ($, 
   await $.session.compact({ trigger: 'auto', messages: [SUMMARY] })
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -357,7 +357,7 @@ test("after the button's /compact the context follows the new conversation", asy
   await ui.press({ key: 'compact' })
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0█░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
@@ -382,10 +382,10 @@ test('the rows a typed /compact leaves refresh the context', async ($, on) => {
   for (const text of [COMPACT_COMMAND, COMPACT_OUTPUT]) {
     await $.session.measure(measurement([], { window: 200_000, tokens: 68_000, percent: 34 }))
     await $.session.append(commandRow(text))
-    expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+    expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
 
     await clock.advance(1_500)
-    expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
+    expect(await contextOf(ui)).toBe('Context \u00a0█░░░░░░░ 12% 24k/200k')
   }
 
   await ui.unmount()
@@ -403,7 +403,7 @@ test("another command's rows, a subagent's and a note leave the context as it wa
   await $.session.append(commandRow(COMPACT_COMMAND, { door: 'note' }))
   await clock.advance(1_500)
 
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -415,11 +415,11 @@ test('a compaction nothing announced is caught on the next tick', async ($, on) 
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
 
   await clock.advance(30_000)
 
-  expect(await contextOf(ui)).toBe('Context █░░░░░░░ 12% 24k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0█░░░░░░░ 12% 24k/200k')
   await ui.unmount()
 })
 
@@ -434,7 +434,7 @@ test('the tick leaves a context the engine still reports', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await clock.advance(30_000)
 
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -457,7 +457,7 @@ test('a vetoed, a precomputed and a subagent compaction leave the context as it 
   await measureContext($)
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  const before = 'Context ███░░░░░ 34% 68k/200k'
+  const before = 'Context \u00a0███░░░░░ 34% 68k/200k'
 
   compact = () => ({ skip: 'off' })
   await $.session.compact({ trigger: 'manual', messages: [SUMMARY] })
@@ -486,7 +486,7 @@ test('a /compact that cannot run leaves the context and the button as they were'
   await ui.press({ key: 'compact' })
 
   expect(toasts).toEqual(['Compact could not be started'])
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
   expect(await ui.findAll({ type: 'Button', text: /♻/ })).toHaveLength(1)
   await ui.unmount()
 })
@@ -519,7 +519,7 @@ test('a reading without a context figure keeps the last one', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
   await $.session.measure(measurement([], { window: 200_000 }))
 
-  expect(await contextOf(ui)).toBe('Context ███░░░░░ 34% 68k/200k')
+  expect(await contextOf(ui)).toBe('Context \u00a0███░░░░░ 34% 68k/200k')
   await ui.unmount()
 })
 
@@ -585,6 +585,9 @@ test('the close button is there with the limits alone, and the compact button is
 const EDITOR_GREEN = '#25E712'
 const EDITOR_YELLOW = '#ca8a04'
 const EDITOR_RED = '#C1121C'
+
+// The colour of every name, on the desktop as in the editor.
+const LABEL_BLUE = '#00B0F0'
 
 const editorBand = (columns: number) =>
   ({ ...BAND, surface: 'vscode', props: { ...BAND.props, bodyColumns: columns } }) as const
@@ -657,31 +660,64 @@ test('the editor band keeps to one line, giving up the full names, then the cont
   }
   const ALL_DETAILS = ['34% 68k/200k', '23% 2h 14m', '41% 3d 5h']
 
-  // Room for everything with the full names (some 49 columns here), or a width
+  // The order of what goes is the requirement; where each step falls is the
+  // estimate's. It was loosened at the owner's request, as a band that took 44 to
+  // 45 columns measured was estimated at 48 and wrote its names as letters with
+  // room to spare, so every step fell some three columns earlier than before.
+
+  // Room for everything with the full names (some 46 columns here), or a width
   // not known yet.
-  for (const columns of [49, 0]) {
+  for (const columns of [46, 0]) {
     expect(await readings(columns)).toEqual({ rings: 3, names: ['Context', 'Session', 'Week'], texts: ALL_DETAILS })
   }
   // The full names go first, every detail staying.
-  for (const columns of [48, 40]) {
+  for (const columns of [45, 38]) {
     expect(await readings(columns)).toEqual({ rings: 3, names: ['C', 'S', 'W'], texts: ALL_DETAILS })
   }
   // The context's tokens go first.
-  for (const columns of [39, 35]) {
+  for (const columns of [37, 33]) {
     expect(await readings(columns)).toEqual({ rings: 3, names: ['C', 'S', 'W'], texts: ['34%', '23% 2h 14m', '41% 3d 5h'] })
   }
   // Then the time left of the session and the week, the rings staying.
-  for (const columns of [34, 27]) {
+  for (const columns of [32, 25]) {
     expect(await readings(columns)).toEqual({ rings: 3, names: ['C', 'S', 'W'], texts: ['34%', '23%', '41%'] })
   }
 
   // Too narrow even for bare rings: the letters and the percents alone.
-  const narrow = await $.ui.mount(editorBand(26))
+  const narrow = await $.ui.mount(editorBand(24))
 
   expect(await narrow.findAll({ type: 'Svg' })).toHaveLength(0)
   expect((await narrow.find({ type: 'Text', text: /34%/ }))?.text).toBe('C 34% · S 23% · W 41%')
   expect(await narrow.find({ type: 'Text', text: /68k|2h 14m|3d 5h/ })).toBeUndefined()
   await narrow.unmount()
+})
+
+// A band read off a real panel that wrote letters though the full names fitted:
+// the context 21% 207k/1M, the session 14% 3h 6m, the week 20% 4d 21h. Measured,
+// it takes 44 to 45 columns with every name in full.
+test('in the editor the names are written in full when a measured band fits them', async ($, on) => {
+  setUp(on)
+  await $.session.measure(
+    measurement(
+      [
+        { kind: 'five_hour', percentUsed: 14, resetsAt: isoAfter(3 * HOUR_MS + 6 * MINUTE_MS) },
+        { kind: 'seven_day', percentUsed: 20, resetsAt: isoAfter(4 * DAY_MS + 21 * HOUR_MS) },
+      ],
+      { window: 1_000_000, tokens: 207_000, percent: 21 },
+    ),
+  )
+  const namesAt = async (columns: number) => {
+    const ui = await $.ui.mount(editorBand(columns))
+    const names = (await ui.findAll({ type: 'Text', text: /^(Context|Session|Week|C|S|W)$/ })).map(
+      name => name.text,
+    )
+    await ui.unmount()
+
+    return names
+  }
+
+  expect(await namesAt(46)).toEqual(['Context', 'Session', 'Week'])
+  expect(await namesAt(40)).toEqual(['C', 'S', 'W'])
 })
 
 test('in the editor the colours are given outright, as its theme leaves some unset', async ($, on) => {
@@ -702,6 +738,7 @@ test('in the editor the colours are given outright, as its theme leaves some uns
     expect((await editor.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(EDITOR_RED)
     expect((await editor.find({ type: 'Text', text: /^50%$/ }))?.props.color).toBe(EDITOR_GREEN)
     expect((await editor.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe(EDITOR_YELLOW)
+    expect((await editor.find({ type: 'Text', text: /^(Context|C)$/ }))?.props.color).toBe(LABEL_BLUE)
     await editor.unmount()
   }
 
@@ -721,6 +758,12 @@ test('in the editor the colours are given outright, as its theme leaves some uns
   expect((await desktop.find({ type: 'Text', text: /^75%$/ }))?.props.color).toBe('warning')
   expect((await desktop.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe(DARK_RED)
   expect((await desktop.find({ type: 'Text', text: /Session/ }))?.props.size).toBeUndefined()
+  // Its names are the editor's blue, with one more space before each bar than
+  // the single one that left them pressed against it.
+  const label = await desktop.find({ type: 'Text', text: /^Session\s*$/ })
+
+  expect(label?.props.color).toBe(LABEL_BLUE)
+  expect(label?.text).toMatch(/^Session\s{2}$/)
   await desktop.unmount()
 })
 

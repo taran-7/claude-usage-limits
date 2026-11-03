@@ -39,11 +39,13 @@ const RING_STROKE = 2.5
 // a detail rather than cutting the line. The buttons and the gaps around them
 // take the same room in every layout; a ring with its letter and gaps, and a
 // separator between rings, take a few columns each. 0 columns means the width
-// is not known yet.
-const CAPTION_CHAR_COLUMNS = 0.6
+// is not known yet. A band read off a real panel took 44 to 45 columns with
+// every name in full where this estimate said 48, so the margin is about one
+// column now.
+const CAPTION_CHAR_COLUMNS = 0.57
 const BUTTONS_COLUMNS = 6
 const RING_COLUMNS = 3
-const RING_SEPARATOR_COLUMNS = 3
+const RING_SEPARATOR_COLUMNS = 2.3
 const SEPARATOR = ' · '
 const COMPACT_ICON = '♻️'
 const CLOSE_ICON = '×'
@@ -181,12 +183,13 @@ const drawRing = (percent: number, color: string): string => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${RING_SIZE}" height="${RING_SIZE}" viewBox="0 0 ${RING_SIZE} ${RING_SIZE}">${circle(RING_TRACK)}${arc}</svg>`
 }
 
-// The colour of the name, in full or a letter, of each ring in the editor's band.
-const LETTER_COLOR = '#00B0F0'
+// The colour of each reading's name, in full or a letter, on every surface.
+const LABEL_COLOR = '#00B0F0'
 
-// The colour of each reading's name everywhere but the editor: calmer than
-// the editor's, beside the full bars.
-const DESKTOP_LABEL_COLOR = '#7FB8C9'
+// What the desktop puts after a name, before its bar: a space, and one more so
+// the bar does not press against the name. The second is a no-break space, so
+// the pair is not collapsed to one.
+const DESKTOP_LABEL_GAP = '  '
 
 const describeReading = ({ percent, detail }: Segment): string =>
   detail === '' ? `${Math.round(percent)}%` : `${Math.round(percent)}% ${detail}`
@@ -447,11 +450,11 @@ export const register: Register = on => {
     const drawSegment = ({ key, label, percent, color, detail }: Segment) => (
       <Text key={key} {...textProps}>
         {isEditor ? (
-          <Text color={LETTER_COLOR} {...textProps}>
+          <Text color={LABEL_COLOR} {...textProps}>
             {`${label[0]} `}
           </Text>
         ) : (
-          <Text color={DESKTOP_LABEL_COLOR}>{`${label} `}</Text>
+          <Text color={LABEL_COLOR}>{`${label}${DESKTOP_LABEL_GAP}`}</Text>
         )}
         {isEditor ? null : (
           <Text color={color} mono>
@@ -474,7 +477,7 @@ export const register: Register = on => {
 
       return Svg === null ? null : (
         <Box key={key} flexDirection="row" alignItems="center" columnGap="sm" flexShrink={1} minWidth={0} {...rowProps}>
-          <Text key="letter" color={LETTER_COLOR} {...textProps}>
+          <Text key="letter" color={LABEL_COLOR} {...textProps}>
             {nameOf(segment, band.hasFullLabels)}
           </Text>
           <Svg
