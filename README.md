@@ -3,7 +3,7 @@
 A Claude Code mod that draws one row above the prompt: how full the context window of the current session is, the five-hour subscription limit and the weekly limit, each with a bar and the time left until it resets.
 
 ```
-♻️ Context ███░░░░░ 34% 68k/200k · Session ██░░░░░░ 23% 2h 20m · Week ███░░░░░ 41% 3d 5h
+♻️ Context  ███░░░░░ 34% 68k/200k · Session  ██░░░░░░ 23% 2h 20m · Week  ███░░░░░ 41% 3d 5h
 ```
 
 The labels, the countdowns (`d`, `h`, `m` for days, hours, minutes) and the toasts are in English. They live in `hooks/register.tsx` and are easy to change.
@@ -16,6 +16,7 @@ The labels, the countdowns (`d`, `h`, `m` for days, hours, minutes) and the toas
 - **Close button**: a small `×` at the right edge hides the band in the current chat. It shows again in a new chat, or at once with the `/limits` command, which switches the band off and on and works also while a model turn is running.
 - **Session**: how much of the five-hour subscription limit is used, and how long until it resets.
 - **Week**: how much of the weekly limit is used, and how long until it resets.
+- The names `Context`, `Session` and `Week` are the same blue (`#00B0F0`) on every surface. On the desktop two spaces, not one, separate each name from its bar.
 - The context bar and percentage are green up to 40%, yellow from 41% to 60% and dark red from 61%. The session and week bars are green below 70%, yellow from 70% and red from 90%.
 - The countdown refreshes on its own every 30 seconds. The numbers themselves arrive after each model response.
 - Subscription limits exist only for accounts with a subscription, and only after the first response in a session. Without them, only the context is shown.
